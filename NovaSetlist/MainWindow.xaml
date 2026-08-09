@@ -806,6 +806,9 @@
                                     <DataTrigger Binding="{Binding CountdownState}" Value="warn">
                                         <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
                                     </DataTrigger>
+                                    <DataTrigger Binding="{Binding CountdownState}" Value="crit">
+                                        <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
+                                    </DataTrigger>
                                     <DataTrigger Binding="{Binding CountdownState}" Value="over">
                                         <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
                                     </DataTrigger>

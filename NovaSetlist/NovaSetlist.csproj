@@ -11,7 +11,7 @@
     <Product>Audio Buddy</Product>
     <AssemblyTitle>Audio Buddy</AssemblyTitle>
     <!-- Bump this for every release; the updater compares it to the latest GitHub release tag -->
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- Fold WPF's native DLLs into the exe when publishing single-file -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>

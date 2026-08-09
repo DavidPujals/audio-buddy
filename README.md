@@ -53,7 +53,7 @@ Double-click `Audio Buddy.exe` (with `appsettings.json` next to it). On launch i
 - **✎ (pencil)** — opens the row's inline editor: key dropdown (majors and minors — `Gm`, `F#m`, …), leader dropdown (pick from the sheet or type a new name), a BPM box, and a colour strip to colour-code the song. Click ✓ to close.
 - **Drag a song's name** to reorder; click the name to grey it out as completed. **✕** removes a row, or right-click any row for edit/remove.
 - **Small windows** — the layout adapts: below ~760 px wide the rows go compact (name + key, actions via right-click); below ~450 px tall the top bar folds into a ☰ menu.
-- **▶** — marks a song as now playing: a countdown of its Length runs under the timecode (locked to LTC when timecode is running, wall clock otherwise), with the song's BPM shown under its name. Click again to stop.
+- **▶** — marks a song as now playing. When timecode is locked, the countdown is **synced to the timeline**: remaining = song Length − the timecode position (mm:ss:ff; the hour is ignored, so hour-per-song layouts work). Without timecode it counts on the wall clock from the second ▶ click, and timecode takes over whenever it arrives. The number turns amber at 30 s left and red at 10 s or in overtime. Click again to stop.
 - The window reopens at the size and position you left it (per machine, stored in `%APPDATA%\NovaSetlist\window.json`).
 - **Copy as text** — puts a clean plain-text order on the clipboard, e.g. `1. Song Name — Key G — Leader: Sarah`.
 - **New service** — clears the list (asks first).

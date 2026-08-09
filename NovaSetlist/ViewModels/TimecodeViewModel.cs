@@ -13,9 +13,10 @@ namespace NovaSetlist.ViewModels;
 /// monitor on a fast render-priority timer so the readout advances every frame.
 ///
 /// Now-playing flow: one ▶ click cues the song — the countdown waits for
-/// timecode and starts when lock arrives. A second click starts a manual
-/// (wall-clock) countdown immediately; if timecode arrives mid-song the
-/// countdown re-anchors to it without jumping.
+/// timecode. While timecode is locked, remaining time is the song length minus
+/// the timecode POSITION (mm:ss:ff, hours ignored) — the countdown is synced to
+/// the timeline, not to when the song was cued. A second click starts a manual
+/// (wall-clock) countdown immediately; timecode takes over whenever it arrives.
 /// </summary>
 public partial class TimecodeViewModel : ObservableObject, IDisposable
 {
@@ -41,10 +42,11 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     private long _lastLockTick = NeverTick;
     private long _lastSignalTick = NeverTick;
 
-    // Now-playing countdown state.
+    // Now-playing countdown state. While timecode is locked, elapsed comes
+    // straight from the timecode position; the wall anchor only carries a
+    // manual start or a timecode dropout.
     private double _lengthSeconds;
     private long _anchorWallTick;
-    private long _anchorFrames = -1; // -1 = wall-clock anchor
     private int _shownCountdownSec = int.MinValue;
 
     public ObservableCollection<string> Devices { get; } = new();
@@ -146,10 +148,6 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         TcState = "off";
         SignalOn = LockOn = false;
 
-        // A countdown anchored to the old monitor's timecode can't survive a
-        // device change — the wall anchor (kept continuous below) takes over.
-        _anchorFrames = -1;
-
         if (string.IsNullOrEmpty(deviceName) || deviceName == OffDevice)
         {
             UpdateTimerGate();
@@ -181,7 +179,7 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     // ---------- now playing ----------
 
     /// <summary>First ▶ click: cue the song. If timecode is already locked the
-    /// countdown starts on it right away; otherwise it waits for lock.</summary>
+    /// countdown shows the timeline position right away; otherwise it waits.</summary>
     public void Cue(string songName, double lengthSeconds, string bpm = "")
     {
         NowPlayingName = songName;
@@ -189,12 +187,10 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         _lengthSeconds = lengthSeconds;
         _shownCountdownSec = int.MinValue;
         _anchorWallTick = Environment.TickCount64;
-        _anchorFrames = -1;
 
         var m = _monitor;
         if (m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1)
         {
-            _anchorFrames = LtcMonitor.FrameFromBits(m.CurrentBits).ToFrameNumber(m.DetectedRate);
             PlayState = "playing";
             UpdateCountdown();
         }
@@ -209,13 +205,12 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Second ▶ click while cued: start the countdown on the wall clock now.
-    /// It re-anchors to timecode automatically if LTC arrives mid-song.</summary>
+    /// Timecode takes over (and re-syncs the position) whenever it arrives.</summary>
     public void StartManual()
     {
         if (PlayState != "cued")
             return;
         _anchorWallTick = Environment.TickCount64;
-        _anchorFrames = -1;
         _shownCountdownSec = int.MinValue;
         PlayState = "playing";
         UpdateCountdown();
@@ -237,7 +232,6 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         PlayState = "";
         CountdownText = "";
         CountdownSub = "";
-        _anchorFrames = -1;
         UpdateTimerGate();
     }
 
@@ -320,24 +314,25 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     {
         var m = _monitor;
         var tc = m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1;
-        long nowFrames = 0;
-        if (tc)
-            nowFrames = LtcMonitor.FrameFromBits(m!.CurrentBits).ToFrameNumber(m.DetectedRate);
 
         if (PlayState == "cued")
         {
             if (!tc)
                 return; // keep showing the static "waiting for timecode" display
-            _anchorFrames = nowFrames;
-            _anchorWallTick = Environment.TickCount64;
             _shownCountdownSec = int.MinValue;
             PlayState = "playing";
         }
 
         double elapsed;
-        if (tc && _anchorFrames >= 0)
+        if (tc)
         {
-            elapsed = Math.Max(0, (nowFrames - _anchorFrames) / m!.MeasuredFps);
+            // Synced to the timeline: elapsed IS the timecode position (mm:ss:ff),
+            // so a 3:00 song with timecode at 2:00 shows 1:00 remaining no matter
+            // when it was cued. The hour field is ignored — playback rigs park
+            // each song in its own hour, and a song's timeline starts at X:00:00:00.
+            var f = LtcMonitor.FrameFromBits(m!.CurrentBits);
+            elapsed = f.Minutes * 60 + f.Seconds +
+                      f.Frames / (double)LtcFrame.NominalFps(m.DetectedRate);
             // Keep the wall anchor in step so a timecode dropout mid-song
             // hands over to the wall clock without a jump.
             _anchorWallTick = Environment.TickCount64 - (long)(elapsed * 1000);
@@ -345,9 +340,6 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         else
         {
             elapsed = (Environment.TickCount64 - _anchorWallTick) / 1000.0;
-            // Manual countdown and timecode just arrived: adopt it, keeping continuity.
-            if (tc && _anchorFrames < 0)
-                _anchorFrames = nowFrames - (long)(elapsed * m!.MeasuredFps);
         }
 
         if (_lengthSeconds > 0)
@@ -361,8 +353,8 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
             if (remaining >= 0)
             {
                 CountdownText = SongLength.Format(remaining);
-                CountdownState = remaining <= 30 ? "warn" : "ok";
-                CountdownSub = $"of {SongLength.Format(_lengthSeconds)}";
+                CountdownState = remaining <= 10 ? "crit" : remaining <= 30 ? "warn" : "ok";
+                CountdownSub = $"of {SongLength.Format(_lengthSeconds)}{(tc ? " · timecode" : " · manual")}";
             }
             else
             {
@@ -379,7 +371,8 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
             _shownCountdownSec = second;
             CountdownText = SongLength.Format(elapsed);
             CountdownState = "up";
-            CountdownSub = "elapsed — no length in the sheet";
+            CountdownSub = tc ? "elapsed · timecode — no length in the sheet"
+                              : "elapsed — no length in the sheet";
         }
     }
 
