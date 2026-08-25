@@ -11,7 +11,7 @@
     <Product>Audio Buddy</Product>
     <AssemblyTitle>Audio Buddy</AssemblyTitle>
     <!-- Bump this for every release; the updater compares it to the latest GitHub release tag -->
-    <Version>1.4.1</Version>
+    <Version>1.5.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- Fold WPF's native DLLs into the exe when publishing single-file -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -22,6 +22,8 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageReference Include="CsvHelper" Version="33.0.1" />
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- DPAPI — encrypts the stored Google refresh token per Windows user -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

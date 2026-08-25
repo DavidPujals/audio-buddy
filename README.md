@@ -20,7 +20,9 @@ A small Windows desktop app for building a service (setlist) order. Add songs, p
    | Sarah |
    | Mike |
 
-2. Share it so the app can read it: **Share → General access → "Anyone with the link" → Viewer**. No sign-in or API key is needed.
+2. Give the app access, either way works:
+   - **Public sheet**: Share → General access → "Anyone with the link" → Viewer. No sign-in needed.
+   - **Private sheet**: keep it restricted and use **Settings → Sign in with Google** in the app. Sign-in is per machine and per Windows user, survives restarts, and reads the sheet through the official Sheets API. It also lets the app *add* songs to the sheet (see manual add below). **Sign out** from the same spot.
 
 3. Copy the **Spreadsheet ID** from the sheet's URL — it's the long string between `/d/` and `/edit`:
 
@@ -47,10 +49,10 @@ Double-click `Audio Buddy.exe` (with `appsettings.json` next to it). On launch i
 
 ### Using the app
 
-- **Search box** — type part of a song name; Enter adds the top match (or pick from the list) with its default key filled in.
-- **+ Add manually** — for a song that isn't in the sheet (added to this service only, never written back to the sheet).
+- **Search box** — type part of a song name; Enter adds the top match (or pick from the list) with its default key filled in. If nothing matches, the list offers **+ Add "…" manually** (Enter takes it too) with the name prefilled.
+- **+ Add manually** — for a song that isn't in the sheet. It joins the service immediately; when signed in with Google, the song (name + key) is also appended to the Songs tab so every machine picks it up on the next sync.
 - **Rows at a glance** — each row shows the song, its key (with the enharmonic spelling, e.g. `F# (= Gb)`) and the leader as plain text.
-- **✎ (pencil)** — opens the row's inline editor: key dropdown (majors and minors — `Gm`, `F#m`, …), leader dropdown (pick from the sheet or type a new name), a BPM box, and a colour strip to colour-code the song. Click ✓ to close.
+- **✎ (pencil)** — opens the row's inline editor: key dropdown (majors and minors — `Gm`, `F#m`, …), leader dropdown (pick from the sheet or type a new name), a BPM box, and a colour strip to colour-code the song. Click ✓ to close — or just open another row's editor; only one is open at a time and edits apply live, so nothing is lost.
 - **Drag a song's name** to reorder; click the name to grey it out as completed. **✕** removes a row, or right-click any row for edit/remove.
 - **Small windows** — the layout adapts: below ~760 px wide the rows go compact (name + key, actions via right-click); below ~450 px tall the top bar folds into a ☰ menu.
 - **▶** — marks a song as now playing. When timecode is locked, the countdown is **synced to the timeline**: remaining = song Length − the timecode position (mm:ss:ff; the hour is ignored, so hour-per-song layouts work). Without timecode it counts on the wall clock from the second ▶ click, and timecode takes over whenever it arrives. The number turns amber at 30 s left and red at 10 s or in overtime. Click again to stop.

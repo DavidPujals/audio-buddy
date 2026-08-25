@@ -453,6 +453,7 @@
                             <Border.Effect>
                                 <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.45" />
                             </Border.Effect>
+                            <StackPanel>
                             <ListBox x:Name="SearchList"
                                      MaxHeight="260"
                                      ItemsSource="{Binding SearchResults}"
@@ -481,7 +482,24 @@
                                         </DockPanel>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
+                                <ListBox.Style>
+                                    <Style TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SearchResults.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ListBox.Style>
                             </ListBox>
+                            <!-- Escape hatch for a song the sheet doesn't have -->
+                            <Button Click="SearchAddManually_Click" HorizontalContentAlignment="Left"
+                                    Padding="8,6" BorderThickness="0" Background="Transparent">
+                                <TextBlock Foreground="{StaticResource DimBrush}">
+                                    <Run Text="+ Add “" /><Run Text="{Binding SearchText, Mode=OneWay}" /><Run Text="” manually…" />
+                                </TextBlock>
+                            </Button>
+                            </StackPanel>
                         </Border>
                     </Popup>
                 </Grid>

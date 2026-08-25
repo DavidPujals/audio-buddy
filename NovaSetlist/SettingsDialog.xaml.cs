@@ -51,6 +51,49 @@ public partial class SettingsDialog : Window
         // while this dialog is open; Cancel puts the original value back.
         _originalOffset = vm.Spl.Offset;
         SplOffsetBox.Text = vm.Spl.Offset.ToString("0.#", CultureInfo.CurrentCulture);
+
+        UpdateGoogleUi();
+    }
+
+    private void UpdateGoogleUi()
+    {
+        if (_vm.GoogleAuth.IsSignedIn)
+        {
+            var email = _vm.GoogleAuth.Email;
+            GoogleStatusText.Text = email.Length > 0 ? $"Signed in as {email}" : "Signed in to Google";
+            GoogleAuthButton.Content = "Sign out";
+        }
+        else
+        {
+            GoogleStatusText.Text = "Private sheet? Sign in to read it with your Google account.";
+            GoogleAuthButton.Content = "Sign in with Google";
+        }
+    }
+
+    private async void GoogleAuth_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm.GoogleAuth.IsSignedIn)
+        {
+            _vm.GoogleAuth.SignOut();
+            UpdateGoogleUi();
+            return;
+        }
+
+        GoogleAuthButton.IsEnabled = false;
+        GoogleStatusText.Text = "Waiting for the browser — approve access there…";
+        try
+        {
+            await _vm.GoogleAuth.SignInAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Google sign-in", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            GoogleAuthButton.IsEnabled = true;
+            UpdateGoogleUi();
+        }
     }
 
     private static double ParseLevel(string text, double fallback)

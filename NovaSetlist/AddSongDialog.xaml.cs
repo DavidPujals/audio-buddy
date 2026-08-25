@@ -8,10 +8,15 @@ public partial class AddSongDialog : Window
     public string SongName => NameBox.Text.Trim();
     public string SongKey => KeyBox.Text.Trim();
 
-    public AddSongDialog()
+    public AddSongDialog(string prefillName = "")
     {
         InitializeComponent();
         Ui.Dwm.UseDarkTitleBar(this);
+        if (prefillName.Length > 0)
+        {
+            NameBox.Text = prefillName;
+            NameBox.CaretIndex = prefillName.Length;
+        }
     }
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)

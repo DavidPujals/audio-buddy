@@ -42,11 +42,20 @@ public partial class SearchDialog : Window
             case Key.Enter:
                 if (ResultList.SelectedItem is Song selected)
                     _vm.AddSong(selected);
-                else
-                    _vm.AddTopMatch();
+                else if (!_vm.AddTopMatch() && _vm.SearchText.Trim().Length > 0)
+                    AddManually_Click(this, new RoutedEventArgs());
                 e.Handled = true;
                 break;
         }
+    }
+
+    private void AddManually_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new AddSongDialog(_vm.SearchText.Trim()) { Owner = this };
+        if (dialog.ShowDialog() != true)
+            return;
+        _vm.AddManualSong(dialog.SongName, dialog.SongKey);
+        _vm.SearchText = "";
     }
 
     private void ResultList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

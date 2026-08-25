@@ -11,6 +11,12 @@ public sealed class AppConfig
     public string SongsTab { get; set; } = "Songs";
     public string LeadersTab { get; set; } = "Leaders";
 
+    /// <summary>OAuth client for Google sign-in; "" = use the client id built into the app.</summary>
+    public string GoogleClientId { get; set; } = "";
+
+    /// <summary>Installed-app OAuth "secret" (not confidential per Google); "" = use the built-in one.</summary>
+    public string GoogleClientSecret { get; set; } = "";
+
     /// <summary>waveIn product name of the LTC monitor input; "" = off.</summary>
     public string TimecodeDevice { get; set; } = "";
 
@@ -48,6 +54,8 @@ public sealed class AppConfig
                 if (cfg is not null)
                 {
                     cfg.SpreadsheetId = cfg.SpreadsheetId?.Trim() ?? "";
+                    cfg.GoogleClientId = cfg.GoogleClientId?.Trim() ?? "";
+                    cfg.GoogleClientSecret = cfg.GoogleClientSecret?.Trim() ?? "";
                     if (string.IsNullOrWhiteSpace(cfg.SongsTab)) cfg.SongsTab = "Songs";
                     if (string.IsNullOrWhiteSpace(cfg.LeadersTab)) cfg.LeadersTab = "Leaders";
                     cfg.TimecodeDevice = cfg.TimecodeDevice?.Trim() ?? "";

@@ -14,7 +14,7 @@ namespace NovaSetlist.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly AppConfig _config = AppConfig.Load();
-    private readonly SheetService _sheets = new();
+    private readonly SheetService _sheets;
     private readonly StorageService _storage = new();
 
     private List<Song> _allSongs = new();
@@ -22,6 +22,7 @@ public partial class MainViewModel : ObservableObject
     private bool _loadingCurrent; // suppress auto-save while restoring current.json
 
     public AppConfig Config => _config;
+    public GoogleAuthService GoogleAuth { get; }
     public TimecodeViewModel Timecode { get; }
     public KeyDetectViewModel KeyDetect { get; }
     public SplViewModel Spl { get; }
@@ -61,6 +62,8 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel()
     {
         Items.CollectionChanged += OnItemsChanged;
+        GoogleAuth = new GoogleAuthService(_config);
+        _sheets = new SheetService(GoogleAuth);
         Timecode = new TimecodeViewModel(_config);
         KeyDetect = new KeyDetectViewModel(_config);
         Spl = new SplViewModel(_config);
@@ -240,13 +243,37 @@ public partial class MainViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>Adds a manually entered song (not in the master list).</summary>
+    /// <summary>Adds a manually entered song. It joins the service immediately; if signed in
+    /// to Google and the song isn't in the master list, it's also appended to the Songs tab.</summary>
     public void AddManualSong(string name, string key)
     {
         name = name.Trim();
+        key = Music.Keys.Normalize(key);
         if (name.Length == 0)
             return;
-        AddItem(name, Music.Keys.Normalize(key), "", "");
+        AddItem(name, key, "", "");
+        _ = AppendToSheetAsync(name, key);
+    }
+
+    private async Task AppendToSheetAsync(string name, string key)
+    {
+        if (!GoogleAuth.IsSignedIn)
+            return; // the public CSV endpoint can't write — sheet stays as-is
+        if (string.IsNullOrWhiteSpace(_config.SpreadsheetId) || _config.SpreadsheetId == "PUT_ID_HERE")
+            return;
+        if (_allSongs.Any(s => string.Equals(s.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)))
+            return; // already in the sheet
+        try
+        {
+            await _sheets.AppendSongAsync(_config, name, key);
+            // Into the master list too, so search finds it and a repeat add doesn't duplicate it.
+            _allSongs.Add(new Song { Name = name, DefaultKey = key, Length = "", Bpm = "" });
+            StatusText = $"Added '{name}' to the sheet";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"'{name}' wasn't added to the sheet ({Brief(ex)})";
+        }
     }
 
     private void AddItem(string name, string key, string length, string bpm)
@@ -262,6 +289,19 @@ public partial class MainViewModel : ObservableObject
     }
 
     // ---------- row actions ----------
+
+    /// <summary>Opens a row's inline editor, closing any other open one first. Edits apply
+    /// live through bindings, so closing an editor IS saving it — nothing is lost.</summary>
+    public void ToggleEdit(SetItemViewModel item)
+    {
+        var opening = !item.IsEditing;
+        if (opening)
+        {
+            foreach (var other in Items)
+                other.IsEditing = false;
+        }
+        item.IsEditing = opening;
+    }
 
     [RelayCommand]
     private void Remove(SetItemViewModel item)

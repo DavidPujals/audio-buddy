@@ -76,7 +76,9 @@ public partial class MainWindow : Window
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        SearchPopup.IsOpen = _vm.SearchResults.Count > 0 && SearchBox.IsKeyboardFocusWithin;
+        // Any non-empty query opens the popup: matches if there are any, and
+        // always the "+ Add … manually" row for songs the sheet doesn't have.
+        SearchPopup.IsOpen = _vm.SearchText.Trim().Length > 0 && SearchBox.IsKeyboardFocusWithin;
         if (SearchPopup.IsOpen)
             SearchList.SelectedIndex = 0;
     }
@@ -100,8 +102,12 @@ public partial class MainWindow : Window
             case Key.Enter:
                 if (SearchPopup.IsOpen && SearchList.SelectedItem is Song selected)
                     _vm.AddSong(selected);
-                else
-                    _vm.AddTopMatch();
+                else if (!_vm.AddTopMatch() && _vm.SearchText.Trim().Length > 0)
+                {
+                    // No match at all — offer to add it manually, name prefilled.
+                    SearchPopup.IsOpen = false;
+                    AddManuallyPrefilled(_vm.SearchText.Trim());
+                }
                 SearchPopup.IsOpen = false;
                 e.Handled = true;
                 break;
@@ -132,11 +138,22 @@ public partial class MainWindow : Window
 
     // ---------- manual add ----------
 
-    private void AddManually_Click(object sender, RoutedEventArgs e)
+    private void AddManually_Click(object sender, RoutedEventArgs e) => AddManuallyPrefilled("");
+
+    private void SearchAddManually_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new AddSongDialog { Owner = this };
-        if (dialog.ShowDialog() == true)
-            _vm.AddManualSong(dialog.SongName, dialog.SongKey);
+        var name = _vm.SearchText.Trim();
+        SearchPopup.IsOpen = false;
+        AddManuallyPrefilled(name);
+    }
+
+    private void AddManuallyPrefilled(string name)
+    {
+        var dialog = new AddSongDialog(name) { Owner = this };
+        if (dialog.ShowDialog() != true)
+            return;
+        _vm.AddManualSong(dialog.SongName, dialog.SongKey);
+        _vm.SearchText = "";
     }
 
     // ---------- row editing ----------
@@ -144,7 +161,7 @@ public partial class MainWindow : Window
     private void EditRow_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: SetItemViewModel item })
-            item.IsEditing = !item.IsEditing;
+            _vm.ToggleEdit(item);
     }
 
     private void Swatch_Click(object sender, RoutedEventArgs e)
@@ -260,7 +277,7 @@ public partial class MainWindow : Window
     private void RowMenuEdit_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: SetItemViewModel item })
-            item.IsEditing = !item.IsEditing;
+            _vm.ToggleEdit(item);
     }
 
     private void RowMenuRemove_Click(object sender, RoutedEventArgs e)
