@@ -83,11 +83,20 @@ public partial class SettingsDialog : Window
         GoogleStatusText.Text = "Waiting for the browser — approve access there…";
         try
         {
-            await _vm.GoogleAuth.SignInAsync();
+            await _vm.GoogleAuth.SignInAsync(_closing.Token);
+            // Signed in: pull the sheet and push any edits that were waiting, whether or
+            // not the user goes on to press Save & sync.
+            _vm.RetrySheetWrites();
+            _ = _vm.RefreshCommand.ExecuteAsync(null);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // window closed mid sign-in — nothing to report
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Google sign-in", MessageBoxButton.OK, MessageBoxImage.Warning);
+            if (IsLoaded)
+                MessageBox.Show(this, ex.Message, "Google sign-in", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
         {
@@ -95,6 +104,9 @@ public partial class SettingsDialog : Window
             UpdateGoogleUi();
         }
     }
+
+    /// <summary>Cancels a sign-in still waiting on the browser when the window closes.</summary>
+    private readonly System.Threading.CancellationTokenSource _closing = new();
 
     private static double ParseLevel(string text, double fallback)
     {
@@ -135,6 +147,7 @@ public partial class SettingsDialog : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _closing.Cancel();
         if (DialogResult != true)
             _vm.Spl.Offset = _originalOffset; // cancelled — undo the live calibration trim
         base.OnClosed(e);

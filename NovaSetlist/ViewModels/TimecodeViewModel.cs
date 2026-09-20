@@ -77,6 +77,30 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string nowPlayingBpm = "";
 
+    /// <summary>Key line under the tempo: "CHROMATIC", "C → D at 1:45" or "now in D · changed at 1:45"; "" = plain key, nothing to say.</summary>
+    [ObservableProperty]
+    private string nowPlayingKey = "";
+
+    /// <summary>"" (hidden), "chromatic", "pending" (change still ahead) or "changed" (timeline passed it).</summary>
+    [ObservableProperty]
+    private string nowPlayingKeyState = "";
+
+    /// <summary>Whole-window flash for an upcoming key change: "" (none), "warn" (≤10 s to go — red flashing)
+    /// or "hit" (the change just happened — green for a couple of seconds).</summary>
+    [ObservableProperty]
+    private string keyChangeAlert = "";
+
+    private const double AlertWarnSeconds = 10;
+    private const double AlertHitSeconds = 2.5;
+
+    /// <summary>No audio buffer for this long = the input has stalled (buffers are 10 ms; hold is 700 ms).</summary>
+    private const long StalledMs = 500;
+
+    private string _fromKey = "", _keyChangeKey = "";
+    private double _keyChangeSeconds;
+    private bool _chromatic;
+    private bool _shownKeyChanged;
+
     /// <summary>"" (nothing), "cued" (waiting for timecode) or "playing".</summary>
     [ObservableProperty]
     private string playState = "";
@@ -115,13 +139,23 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         var names = new List<string> { OffDevice };
         names.AddRange(WdmInput.DeviceNames());
 
-        if (names.SequenceEqual(Devices))
-            return;
+        // A device that's unplugged right now stays listed and selected — dropping it here
+        // would persist "" and silently forget the choice the moment Settings opens.
         var keep = SelectedDevice;
-        Devices.Clear();
-        foreach (var n in names)
-            Devices.Add(n);
-        SelectedDevice = Devices.Contains(keep) ? keep : OffDevice;
+        var present = names.Contains(keep);
+        if (keep != OffDevice && !present)
+            names.Add(keep);
+
+        if (!names.SequenceEqual(Devices))
+        {
+            Devices.Clear();
+            foreach (var n in names)
+                Devices.Add(n);
+            SelectedDevice = keep;
+        }
+        // Re-plugged since the input died? Same name, so no change event — restart it here.
+        if (keep != OffDevice && present && _monitor is null)
+            StartMonitor(keep);
     }
 
     partial void OnSelectedDeviceChanged(string value)
@@ -180,7 +214,8 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
 
     /// <summary>First ▶ click: cue the song. If timecode is already locked the
     /// countdown shows the timeline position right away; otherwise it waits.</summary>
-    public void Cue(string songName, double lengthSeconds, string bpm = "")
+    public void Cue(string songName, double lengthSeconds, string bpm = "",
+        bool chromatic = false, string fromKey = "", string keyChangeKey = "", double keyChangeSeconds = 0)
     {
         NowPlayingName = songName;
         NowPlayingBpm = FormatBpm(bpm);
@@ -188,8 +223,16 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         _shownCountdownSec = int.MinValue;
         _anchorWallTick = Environment.TickCount64;
 
+        _fromKey = fromKey.Trim();
+        _keyChangeKey = keyChangeKey.Trim();
+        _keyChangeSeconds = keyChangeSeconds;
+        _chromatic = chromatic;
+        _shownKeyChanged = false;
+        KeyChangeAlert = "";
+        ShowKeyChange(changed: false);
+
         var m = _monitor;
-        if (m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1)
+        if (m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1 && m.MsSinceAudio < StalledMs)
         {
             PlayState = "playing";
             UpdateCountdown();
@@ -225,10 +268,48 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         return bpm.EndsWith("bpm", StringComparison.OrdinalIgnoreCase) ? bpm : bpm + " BPM";
     }
 
+    /// <summary>Key line: "C → D at 1:45" before the change, "now in D · changed at 1:45" after;
+    /// a chromatic song adds "· CHROMATIC" (or shows "A · CHROMATIC" alone when there's no change).</summary>
+    private void ShowKeyChange(bool changed)
+    {
+        var chroma = _chromatic ? " · CHROMATIC" : "";
+        if (_keyChangeKey.Length == 0)
+        {
+            if (_chromatic)
+            {
+                NowPlayingKey = _fromKey.Length > 0 ? $"{_fromKey} · CHROMATIC" : "CHROMATIC";
+                NowPlayingKeyState = "chromatic";
+            }
+            else
+            {
+                NowPlayingKey = "";
+                NowPlayingKeyState = "";
+            }
+            return;
+        }
+        var at = _keyChangeSeconds > 0 ? $" at {SongLength.Format(_keyChangeSeconds)}" : "";
+        var from = _fromKey.Length > 0 ? _fromKey : "?";
+        if (changed)
+        {
+            NowPlayingKey = $"now in {_keyChangeKey} · changed{at}{chroma}";
+            NowPlayingKeyState = "changed";
+        }
+        else
+        {
+            NowPlayingKey = $"{from} → {_keyChangeKey}{at}{chroma}";
+            NowPlayingKeyState = "pending";
+        }
+    }
+
     public void StopCountdown()
     {
         NowPlayingName = "";
         NowPlayingBpm = "";
+        NowPlayingKey = "";
+        NowPlayingKeyState = "";
+        KeyChangeAlert = "";
+        _keyChangeKey = "";
+        _chromatic = false;
         PlayState = "";
         CountdownText = "";
         CountdownSub = "";
@@ -273,7 +354,9 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     private void UpdateTimecode(LtcMonitor m)
     {
         var now = Environment.TickCount64;
-        var rawSignal = m.SignalPresent && m.MeasuredFps > 0;
+        // A stalled capture (virtual device stopped delivering) must read as no signal,
+        // not as a frozen-but-locked readout; buffers normally arrive every 10 ms.
+        var rawSignal = m.SignalPresent && m.MeasuredFps > 0 && m.MsSinceAudio < StalledMs;
         var rawLocked = m.Locked && rawSignal;
         if (rawSignal)
             _lastSignalTick = now;
@@ -313,7 +396,7 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     private void UpdateCountdown()
     {
         var m = _monitor;
-        var tc = m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1;
+        var tc = m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1 && m.MsSinceAudio < StalledMs;
 
         if (PlayState == "cued")
         {
@@ -340,6 +423,27 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         else
         {
             elapsed = (Environment.TickCount64 - _anchorWallTick) / 1000.0;
+        }
+
+        // Key change: flip the key line once the timeline passes the change point
+        // (and back, if timecode jumps to before it).
+        if (_keyChangeKey.Length > 0 && _keyChangeSeconds > 0)
+        {
+            var changed = elapsed >= _keyChangeSeconds;
+            if (changed != _shownKeyChanged)
+            {
+                _shownKeyChanged = changed;
+                ShowKeyChange(changed);
+            }
+
+            // Whole-window cue: red flashing through the last 10 s before the
+            // change, solid green for a moment after it, then back to normal.
+            var toGo = _keyChangeSeconds - elapsed;
+            var alert = toGo > 0 && toGo <= AlertWarnSeconds ? "warn"
+                      : toGo <= 0 && -toGo < AlertHitSeconds ? "hit"
+                      : "";
+            if (alert != KeyChangeAlert)
+                KeyChangeAlert = alert;
         }
 
         if (_lengthSeconds > 0)

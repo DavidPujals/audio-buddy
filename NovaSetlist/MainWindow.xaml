@@ -79,10 +79,10 @@
                                            FontFamily="Consolas" FontSize="13" FontWeight="Bold">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
-                                            <Setter Property="Text" Value="{Binding SelectedKey}" />
+                                            <Setter Property="Text" Value="{Binding KeyShort}" />
                                             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding SelectedKey}" Value="">
+                                                <DataTrigger Binding="{Binding KeyShort}" Value="">
                                                     <Setter Property="Text" Value="—" />
                                                     <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
                                                 </DataTrigger>
@@ -166,6 +166,39 @@
                              Text="{Binding Bpm, UpdateSourceTrigger=PropertyChanged}" />
                 </StackPanel>
 
+                <!-- Chromatic / key change are master-song data: synced to the sheet -->
+                <CheckBox Content="Chromatic" IsChecked="{Binding IsChromatic}"
+                          VerticalAlignment="Center" Margin="0,0,18,4"
+                          ToolTip="No fixed key — the key column reads Chromatic (synced to the sheet)" />
+
+                <CheckBox Content="Key change" IsChecked="{Binding HasKeyChange}"
+                          VerticalAlignment="Center" Margin="0,0,10,4"
+                          ToolTip="Song has a key change mid-way (synced to the sheet)" />
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,18,4">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasKeyChange}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="TO" Style="{StaticResource SectionHeader}"
+                               FontSize="10" Margin="0,0,7,0" />
+                    <ComboBox IsEditable="True" VerticalAlignment="Center"
+                              Width="84" FontFamily="Consolas"
+                              ItemsSource="{Binding DataContext.StandardKeys, RelativeSource={RelativeSource AncestorType=Window}}"
+                              Text="{Binding KeyChangeKey, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="AT" Style="{StaticResource SectionHeader}"
+                               FontSize="10" Margin="12,0,7,0" />
+                    <TextBox Width="64" VerticalAlignment="Center" FontFamily="Consolas"
+                             Text="{Binding KeyChangeAt, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Timecode position of the key change — m:ss, e.g. 1:45" />
+                </StackPanel>
+
                 <ItemsControl ItemsSource="{x:Static ui:RowColors.Tokens}"
                               VerticalAlignment="Center" Margin="0,0,0,4">
                     <ItemsControl.ItemsPanel>
@@ -242,24 +275,38 @@
                                            FontSize="14" TextTrimming="CharacterEllipsis" Margin="0,0,10,0" />
                             </Border>
 
-                            <TextBlock Grid.Column="2" VerticalAlignment="Center"
-                                       FontFamily="Consolas" FontSize="15" FontWeight="Bold">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="{Binding SelectedKey}" />
-                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedKey}" Value="">
-                                                <Setter Property="Text" Value="—" />
-                                                <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                            <TextBlock Grid.Column="3" Text="{Binding EquivalentText}" VerticalAlignment="Center"
-                                       Foreground="{StaticResource DimBrush}"
-                                       FontFamily="Consolas" Margin="0,0,10,0" />
+                            <!-- Key · enharmonic · "→ D" key change, as one line so it can spill across both key columns -->
+                            <Grid Grid.Column="2" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,0,10,0">
+                                <TextBlock Text="—" FontFamily="Consolas" FontSize="15" FontWeight="Bold"
+                                           Foreground="{StaticResource FaintBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding KeyShort}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock TextTrimming="CharacterEllipsis" FontFamily="Consolas">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding KeyShort}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                    <Run FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextBrush}"
+                                         Text="{Binding KeyText, Mode=OneWay}" /><Run Foreground="{StaticResource DimBrush}"
+                                         Text="{Binding EquivalentText, Mode=OneWay}" /><Run FontSize="15" FontWeight="Bold" Foreground="{StaticResource GreenBrush}"
+                                         Text="{Binding KeyChangeText, Mode=OneWay}" /><Run FontSize="10" FontWeight="Bold" Foreground="{StaticResource AmberBrush}"
+                                         Text="{Binding ChromaticText, Mode=OneWay}" />
+                                </TextBlock>
+                            </Grid>
 
                             <TextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="13"
                                        TextTrimming="CharacterEllipsis" Margin="0,0,8,0">
@@ -396,6 +443,58 @@
         </DataTemplate>
     </Window.Resources>
 
+    <Grid>
+        <!-- Key-change cue behind everything: red flashing for the last 10 s, green as it lands -->
+        <Rectangle IsHitTestVisible="False" Fill="{StaticResource RedBrush}" Opacity="0">
+            <Rectangle.Style>
+                <Style TargetType="Rectangle">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Timecode.KeyChangeAlert}" Value="warn">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard Name="RedFlash">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         From="0" To="0.55" Duration="0:0:0.25"
+                                                         AutoReverse="True" RepeatBehavior="Forever" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions>
+                                <StopStoryboard BeginStoryboardName="RedFlash" />
+                            </DataTrigger.ExitActions>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Rectangle.Style>
+        </Rectangle>
+        <Rectangle IsHitTestVisible="False" Fill="{StaticResource GreenBrush}" Opacity="0">
+            <Rectangle.Style>
+                <Style TargetType="Rectangle">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Timecode.KeyChangeAlert}" Value="hit">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard Name="GreenHit">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         To="0.5" Duration="0:0:0.1" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions>
+                                <StopStoryboard BeginStoryboardName="GreenHit" />
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         From="0.5" To="0" Duration="0:0:0.6" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.ExitActions>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Rectangle.Style>
+        </Rectangle>
+
     <DockPanel Margin="16,14,16,12">
 
         <!-- Top bar: search · actions (folds away below the height breakpoint) -->
@@ -461,7 +560,7 @@
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel Margin="2,0">
-                                            <TextBlock DockPanel.Dock="Right" Text="{Binding DefaultKey}"
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding KeyLabel}"
                                                        Foreground="{StaticResource DimBrush}"
                                                        FontFamily="Consolas" Margin="14,0,4,0" />
                                             <TextBlock DockPanel.Dock="Right"
@@ -811,6 +910,27 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
+                    <!-- Key change / chromatic line: dim while the change is ahead, green once the timeline passes it -->
+                    <TextBlock Text="{Binding NowPlayingKey}" HorizontalAlignment="Center" Margin="0,0,0,2"
+                               FontFamily="Consolas" FontWeight="Bold" FontSize="12"
+                               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="270">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource DimBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding NowPlayingKeyState}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding NowPlayingKeyState}" Value="chromatic">
+                                        <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding NowPlayingKeyState}" Value="changed">
+                                        <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                     <TextBlock Text="{Binding CountdownText}" HorizontalAlignment="Center"
                                FontFamily="Consolas" FontWeight="Bold">
                         <TextBlock.Style>
@@ -978,4 +1098,5 @@
         </Grid>
 
     </DockPanel>
+    </Grid>
 </Window>

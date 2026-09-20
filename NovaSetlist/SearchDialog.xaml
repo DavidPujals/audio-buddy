@@ -52,7 +52,7 @@
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <DockPanel Margin="2,0">
-                        <TextBlock DockPanel.Dock="Right" Text="{Binding DefaultKey}"
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding KeyLabel}"
                                    Foreground="{StaticResource DimBrush}"
                                    FontFamily="Consolas" Margin="14,0,4,0" />
                         <TextBlock DockPanel.Dock="Right"

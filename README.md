@@ -6,12 +6,13 @@ A small Windows desktop app for building a service (setlist) order. Add songs, p
 
 1. Create a Google Sheet with **two tabs**:
 
-   **Tab `Songs`** — header row, then one song per row. The Length column (m:ss) is optional and drives the now-playing countdown; the BPM column (column D) is optional and shows in search results, the row editor and the now-playing panel:
+   **Tab `Songs`** — header row, then one song per row. The Length column (m:ss) is optional and drives the now-playing countdown; the BPM column (column D) is optional and shows in search results, the row editor and the now-playing panel. Columns E–G hold the key details edited in the app (see below) — the app adds them, with headers, the first time it writes one:
 
-   | Song Name | Default Key | Length | BPM |
-   |-----------|-------------|--------|-----|
-   | Great Are You Lord | G | 5:30 | 72 |
-   | Oceans | D | 8:55 | 64 |
+   | Song Name | Default Key | Length | BPM | Chromatic | Key Change | Key Change At |
+   |-----------|-------------|--------|-----|-----------|------------|---------------|
+   | Great Are You Lord | G | 5:30 | 72 | | | |
+   | Oceans | D | 8:55 | 64 | | E | 5:10 |
+   | Drum Intro | | 1:00 | | TRUE | | |
 
    **Tab `Leaders`** — header row, then one name per row:
 
@@ -53,6 +54,7 @@ Double-click `Audio Buddy.exe` (with `appsettings.json` next to it). On launch i
 - **+ Add manually** — for a song that isn't in the sheet. It joins the service immediately; when signed in with Google, the song (name + key) is also appended to the Songs tab so every machine picks it up on the next sync.
 - **Rows at a glance** — each row shows the song, its key (with the enharmonic spelling, e.g. `F# (= Gb)`) and the leader as plain text.
 - **✎ (pencil)** — opens the row's inline editor: key dropdown (majors and minors — `Gm`, `F#m`, …), leader dropdown (pick from the sheet or type a new name), a BPM box, and a colour strip to colour-code the song. Click ✓ to close — or just open another row's editor; only one is open at a time and edits apply live, so nothing is lost.
+- **Chromatic / key change** (in the editor) — *Chromatic* is a flag next to the key (the row shows `A CHROMATIC`; the key stays set). *Key change* reveals **TO** (the new key) and **AT** (where in the song's timecode it happens, `m:ss`); the row then shows `C → D`, and while the song is playing the Now Playing panel shows `C → D at 1:45`, turning green — "now in D" — once the timeline passes that point. The whole window **flashes red through the last 10 seconds** before the change, goes **green for a moment** as it lands, then returns to normal. Both are song details, not service details: when signed in with Google they're written to the sheet (columns E–G) and every machine gets them on the next sync. Editing them on a song that isn't in the sheet adds the song to the sheet.
 - **Drag a song's name** to reorder; click the name to grey it out as completed. **✕** removes a row, or right-click any row for edit/remove.
 - **Small windows** — the layout adapts: below ~760 px wide the rows go compact (name + key, actions via right-click); below ~450 px tall the top bar folds into a ☰ menu.
 - **▶** — marks a song as now playing. When timecode is locked, the countdown is **synced to the timeline**: remaining = song Length − the timecode position (mm:ss:ff; the hour is ignored, so hour-per-song layouts work). Without timecode it counts on the wall clock from the second ▶ click, and timecode takes over whenever it arrives. The number turns amber at 30 s left and red at 10 s or in overtime. Click again to stop.
@@ -74,7 +76,7 @@ Give it a second WDM input carrying the band / music feed (Settings → Audio in
 
 The bottom of the side panel shows a live **SPL(A)** reading (IEC A-weighting, Slow 1 s or Fast 125 ms response) from a measurement-mic input picked in **Settings → SPL meter**. Calibrate it against a reference SPL meter with the **calibration offset** — type a value or trim with the −1 dB / +1 dB buttons; the offset applies live while the Settings window is open, so you can dial it in as you watch both meters. **Colour zones** recolour the number as the room gets louder: green until the yellow level, then yellow, then red. Untick "Show a live SPL(A) meter" to hide the section entirely.
 
-The current service auto-saves on every change (`%APPDATA%\NovaSetlist\current.json`) and is restored when the app reopens.
+The current service auto-saves on every change (`%APPDATA%\NovaSetlist\current.json`) and is restored when the app reopens. Key-detail edits that couldn't reach the sheet (offline, signed out) are kept and retried — on a timer, after a sign-in, or on the next launch — and the status line says so. Unexpected errors are logged to `%APPDATA%\NovaSetlist\crash.log` rather than closing the app mid-service.
 
 ## Updates
 

@@ -307,6 +307,7 @@ public partial class MainWindow : Window
     {
         SaveWindowPlacement();
         _vm.FlushPendingSave();
+        _vm.Spl.FlushConfig();
         _vm.Timecode.Dispose();
         _vm.KeyDetect.Dispose();
         _vm.Spl.Dispose();

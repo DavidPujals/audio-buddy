@@ -31,7 +31,31 @@ public sealed class StorageService
         {
             if (!File.Exists(path))
                 return null;
-            return JsonSerializer.Deserialize<T>(File.ReadAllText(path));
+            var value = JsonSerializer.Deserialize<T>(File.ReadAllText(path));
+            // A hand-edited file can carry explicit nulls; the app treats every string as non-null.
+            switch (value)
+            {
+                case ServiceSet set:
+                    set.Items ??= new();
+                    foreach (var i in set.Items)
+                    {
+                        i.Name ??= ""; i.SelectedKey ??= ""; i.Leader ??= ""; i.Color ??= "";
+                        i.Length ??= ""; i.Bpm ??= ""; i.KeyChangeKey ??= ""; i.KeyChangeAt ??= "";
+                    }
+                    break;
+                case CacheData cache:
+                    cache.Songs ??= new();
+                    cache.Leaders ??= new();
+                    cache.Songs.RemoveAll(s => s is null);
+                    cache.Leaders.RemoveAll(l => l is null);
+                    foreach (var s in cache.Songs)
+                    {
+                        s.Name ??= ""; s.DefaultKey ??= ""; s.Length ??= ""; s.Bpm ??= "";
+                        s.KeyChangeKey ??= ""; s.KeyChangeAt ??= "";
+                    }
+                    break;
+            }
+            return value;
         }
         catch
         {

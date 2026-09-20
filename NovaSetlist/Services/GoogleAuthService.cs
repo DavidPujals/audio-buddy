@@ -65,8 +65,9 @@ public sealed class GoogleAuthService
 
     // ---------- sign in ----------
 
-    /// <summary>Runs the browser sign-in flow. Throws with a user-readable message on failure.</summary>
-    public async Task SignInAsync()
+    /// <summary>Runs the browser sign-in flow. Throws with a user-readable message on failure;
+    /// cancelling (e.g. the Settings window closing) throws OperationCanceledException.</summary>
+    public async Task SignInAsync(CancellationToken cancel = default)
     {
         if (ClientId.Length == 0)
             throw new InvalidOperationException(
@@ -95,7 +96,7 @@ public sealed class GoogleAuthService
 
             Process.Start(new ProcessStartInfo(authUrl) { UseShellExecute = true });
 
-            var query = await WaitForRedirectAsync(listener, state, TimeSpan.FromMinutes(3));
+            var query = await WaitForRedirectAsync(listener, state, TimeSpan.FromMinutes(3), cancel);
 
             if (query.TryGetValue("error", out var err))
                 throw new InvalidOperationException(err == "access_denied"
@@ -131,15 +132,21 @@ public sealed class GoogleAuthService
 
     /// <summary>Accepts loopback connections until Google's redirect arrives; returns its query parameters.</summary>
     private static async Task<Dictionary<string, string>> WaitForRedirectAsync(
-        TcpListener listener, string expectedState, TimeSpan timeout)
+        TcpListener listener, string expectedState, TimeSpan timeout, CancellationToken cancel)
     {
-        using var cts = new CancellationTokenSource(timeout);
-        // Browsers can open extra speculative connections (favicon etc.) — keep
-        // accepting until a request actually carries the OAuth response.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        cts.CancelAfter(timeout);
+        // Browsers can open extra speculative connections (favicon, preconnect) — keep
+        // accepting until a request actually carries the OAuth response. A connection
+        // that sends nothing or resets must not take the whole sign-in down with it.
         while (true)
         {
             TcpClient client;
             try { client = await listener.AcceptTcpClientAsync(cts.Token); }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (OperationCanceledException)
             {
                 throw new InvalidOperationException("Timed out waiting for the browser — no sign-in completed within 3 minutes.");
@@ -148,8 +155,22 @@ public sealed class GoogleAuthService
             using (client)
             {
                 var stream = client.GetStream();
-                stream.ReadTimeout = 5000;
-                var requestLine = ReadRequestLine(stream);
+                string requestLine;
+                try
+                {
+                    using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+                    readCts.CancelAfter(TimeSpan.FromSeconds(5));
+                    requestLine = await ReadRequestLineAsync(stream, readCts.Token);
+                }
+                catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException
+                                           && !cts.IsCancellationRequested)
+                {
+                    continue; // idle/reset connection — wait for the real redirect
+                }
+                catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+                {
+                    throw new InvalidOperationException("Timed out waiting for the browser — no sign-in completed within 3 minutes.");
+                }
 
                 var query = ParseQuery(requestLine);
                 var isOAuthResponse = query.ContainsKey("code") || query.ContainsKey("error");
@@ -175,13 +196,16 @@ public sealed class GoogleAuthService
         }
     }
 
-    private static string ReadRequestLine(NetworkStream stream)
+    private static async Task<string> ReadRequestLineAsync(NetworkStream stream, CancellationToken cancel)
     {
         // Just the first line ("GET /?code=… HTTP/1.1") — the rest of the request is irrelevant.
         var sb = new StringBuilder(512);
-        int b;
-        while (sb.Length < 8192 && (b = stream.ReadByte()) >= 0)
+        var one = new byte[1];
+        while (sb.Length < 8192)
         {
+            var n = await stream.ReadAsync(one, cancel);
+            if (n <= 0) break;
+            var b = one[0];
             if (b == '\n') break;
             if (b != '\r') sb.Append((char)b);
         }
@@ -217,9 +241,10 @@ public sealed class GoogleAuthService
             if (_accessToken is not null && DateTime.UtcNow < _accessExpiresUtc - TimeSpan.FromMinutes(1))
                 return _accessToken;
 
+            var usedToken = _refreshToken;
             var form = new Dictionary<string, string>
             {
-                ["refresh_token"] = _refreshToken,
+                ["refresh_token"] = usedToken,
                 ["client_id"] = ClientId,
                 ["client_secret"] = ClientSecret,
                 ["grant_type"] = "refresh_token",
@@ -228,10 +253,12 @@ public sealed class GoogleAuthService
             var json = await resp.Content.ReadAsStringAsync();
             if (!resp.IsSuccessStatusCode)
             {
-                // invalid_grant = token revoked/expired — the stored sign-in is dead.
+                // invalid_grant = token revoked/expired — the stored sign-in is dead. Only
+                // sign out if a fresh sign-in hasn't replaced the token while we waited.
                 if (json.Contains("invalid_grant", StringComparison.Ordinal))
                 {
-                    SignOutLocal();
+                    if (ReferenceEquals(_refreshToken, usedToken))
+                        SignOutLocal();
                     throw new InvalidOperationException("Google sign-in has expired — open Settings and sign in again.");
                 }
                 throw new InvalidOperationException($"Google token refresh failed (HTTP {(int)resp.StatusCode}).");
@@ -245,11 +272,16 @@ public sealed class GoogleAuthService
         }
     }
 
+    /// <summary>Forgets the cached access token so the next call refreshes (after a 401).</summary>
+    public void InvalidateAccessToken() => _accessToken = null;
+
     private void ApplyTokenResponse(string json)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        _accessToken = root.GetProperty("access_token").GetString();
+        if (!root.TryGetProperty("access_token", out var at) || at.GetString() is not { Length: > 0 } token)
+            throw new InvalidOperationException("Google's sign-in reply didn't include an access token — try again.");
+        _accessToken = token;
         var expiresIn = root.TryGetProperty("expires_in", out var e) ? e.GetInt32() : 3600;
         _accessExpiresUtc = DateTime.UtcNow.AddSeconds(expiresIn);
         if (root.TryGetProperty("refresh_token", out var r) && r.GetString() is { Length: > 0 } rt)
@@ -281,12 +313,21 @@ public sealed class GoogleAuthService
     public void SignOut()
     {
         if (_refreshToken is { } token)
-        {
-            // Best-effort revoke so the grant doesn't linger on the Google account.
-            _ = Http.PostAsync(RevokeEndpoint,
-                new FormUrlEncodedContent(new Dictionary<string, string> { ["token"] = token }));
-        }
+            _ = RevokeAsync(token); // best effort — the grant shouldn't linger on the Google account
         SignOutLocal();
+    }
+
+    private static async Task RevokeAsync(string token)
+    {
+        try
+        {
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["token"] = token });
+            using var response = await Http.PostAsync(RevokeEndpoint, content);
+        }
+        catch
+        {
+            // Offline or already revoked — nothing to do; the local token is gone regardless.
+        }
     }
 
     private void SignOutLocal()

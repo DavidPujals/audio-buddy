@@ -73,6 +73,8 @@ public partial class MainViewModel : ObservableObject
             _saveTimer.Stop();
             SaveCurrentNow();
         };
+        _sheetWriteTimer = new DispatcherTimer { Interval = SheetWriteDebounce };
+        _sheetWriteTimer.Tick += OnSheetWriteTick;
     }
 
     /// <summary>Applies sheet settings from the Settings dialog: saves appsettings.json and re-syncs.</summary>
@@ -104,7 +106,7 @@ public partial class MainViewModel : ObservableObject
         var cache = _storage.LoadCache();
         if (cache is not null)
         {
-            ApplyMasterData(cache.Songs, cache.Leaders);
+            ApplyMasterData(cache.Songs, cache.Leaders, Environment.TickCount64);
             _lastSynced = cache.LastSynced;
             StatusText = $"Using cached list — last synced {cache.LastSynced:g}";
             StatusState = "cached";
@@ -115,6 +117,7 @@ public partial class MainViewModel : ObservableObject
 
     private void RestoreCurrentService()
     {
+        var dirty = new List<SetItemViewModel>();
         _loadingCurrent = true;
         try
         {
@@ -123,7 +126,7 @@ public partial class MainViewModel : ObservableObject
                 return;
             foreach (var dto in saved.Items)
             {
-                AttachItem(new SetItemViewModel
+                var item = new SetItemViewModel
                 {
                     Name = dto.Name,
                     SelectedKey = dto.SelectedKey,
@@ -132,10 +135,17 @@ public partial class MainViewModel : ObservableObject
                     Length = dto.Length,
                     Bpm = dto.Bpm,
                     IsCompleted = dto.Completed,
-                });
-                var leader = dto.Leader.Trim();
-                if (leader.Length > 0 && !Leaders.Contains(leader, StringComparer.OrdinalIgnoreCase))
-                    Leaders.Add(leader);
+                    IsChromatic = dto.Chromatic,
+                    HasKeyChange = dto.HasKeyChange,
+                    KeyChangeKey = dto.KeyChangeKey,
+                    KeyChangeAt = dto.KeyChangeAt,
+                    SheetDirty = dto.SheetDirty,
+                    SheetAddOnly = dto.SheetAddOnly,
+                };
+                AttachItem(item);
+                if (dto.SheetDirty)
+                    dirty.Add(item);
+                AddLeader(dto.Leader);
             }
         }
         finally
@@ -143,6 +153,19 @@ public partial class MainViewModel : ObservableObject
             _loadingCurrent = false;
         }
         Renumber();
+
+        // Edits that never reached the sheet (closed too soon, offline) go back in the queue
+        // BEFORE the startup sync, so the sync leaves them alone instead of reverting them.
+        foreach (var item in dirty)
+            QueueSheetWrite(item);
+    }
+
+    /// <summary>Adds a leader name to the dropdown if it's new (case-insensitive).</summary>
+    private void AddLeader(string? name)
+    {
+        var leader = (name ?? "").Trim();
+        if (leader.Length > 0 && !Leaders.Contains(leader, StringComparer.OrdinalIgnoreCase))
+            Leaders.Add(leader);
     }
 
     // ---------- master data / refresh ----------
@@ -155,17 +178,25 @@ public partial class MainViewModel : ObservableObject
         IsRefreshing = true;
         try
         {
+            var fetchStarted = Environment.TickCount64;
             var (songs, leaders) = await _sheets.FetchAsync(_config);
-            ApplyMasterData(songs, leaders);
+            ApplyMasterData(songs, leaders, fetchStarted);
             _lastSynced = DateTime.Now;
             _storage.SaveCache(new CacheData { Songs = songs, Leaders = leaders, LastSynced = _lastSynced.Value });
             StatusText = $"Synced {_lastSynced:g} — {songs.Count} songs, {leaders.Count} leaders";
             StatusState = "ok";
+            // Edits parked while signed out / offline can go up now.
+            if (_pendingSheetWrites.Count > 0 && GoogleAuth.IsSignedIn)
+                RearmSheetWrite(SheetWriteDebounce);
         }
         catch (Exception ex)
         {
+            // A sheet-level reason (sign-in expired, private sheet, bad tab) is worth
+            // showing even when the cache keeps the app usable; network noise isn't.
             StatusText = _lastSynced is { } t
-                ? $"Using cached list — last synced {t:g}"
+                ? ex is InvalidOperationException
+                    ? $"Using cached list — {ex.Message}"
+                    : $"Using cached list — last synced {t:g}"
                 : $"Couldn't load the sheet ({Brief(ex)})";
             StatusState = _lastSynced is null ? "error" : "cached";
         }
@@ -173,25 +204,40 @@ public partial class MainViewModel : ObservableObject
         {
             IsRefreshing = false;
         }
+        if (_refreshAgain)
+        {
+            _refreshAgain = false;
+            await RefreshAsync(); // a write-back landed mid-fetch; that fetch was already stale
+        }
     }
 
     private static string Brief(Exception ex) =>
         ex is InvalidOperationException ? ex.Message : "no internet, or bad Spreadsheet ID";
 
-    private void ApplyMasterData(List<Song> songs, List<string> leaders)
+    /// <param name="fetchStarted">Tick when this data was requested — sheet values older than
+    /// our last write-back are not allowed to overwrite the rows.</param>
+    private void ApplyMasterData(List<Song> songs, List<string> leaders, long fetchStarted)
     {
         _allSongs = songs;
 
-        // Keep any session-typed leaders that aren't in the sheet.
-        var extras = Leaders.Where(l => !leaders.Contains(l, StringComparer.OrdinalIgnoreCase)).ToList();
-        Leaders.Clear();
-        foreach (var l in leaders.Concat(extras))
-            Leaders.Add(l);
+        // Add-only: a Clear/re-add fires a Reset that blanks the Leader of any row whose
+        // editor is open (the editable ComboBox pushes "" through the binding). Names typed
+        // this session stay for the session either way.
+        foreach (var l in leaders)
+            AddLeader(l);
+
+        var staleForExtras = fetchStarted < _lastSheetWriteTick;
 
         // Sheet edits flow into the current service: every sync refreshes each
         // row's Length and BPM from its master song, so a corrected timestamp
         // doesn't require re-adding the song. An EMPTY sheet cell never wipes a
         // value someone typed by hand; keys/leaders are per-service and untouched.
+        //
+        // Chromatic / key change are two-way: edits here are written to the
+        // sheet, so when signed in the sheet is authoritative (a cleared cell
+        // clears the row). Signed out there's no write path, so local edits
+        // are kept unless the sheet actually has a value.
+        var sheetIsAuthority = GoogleAuth.IsSignedIn;
         foreach (var item in Items)
         {
             var song = songs.FirstOrDefault(s =>
@@ -202,6 +248,28 @@ public partial class MainViewModel : ObservableObject
                 item.Length = song.Length;
             if (song.Bpm.Length > 0)
                 item.Bpm = song.Bpm;
+
+            if (staleForExtras || item.SheetDirty || _pendingSheetWrites.Contains(item))
+                continue; // an edit is on its way up (or this fetch predates one) — don't clobber it
+            _applyingSheet = true;
+            try
+            {
+                if (sheetIsAuthority || song.Chromatic)
+                    item.IsChromatic = song.Chromatic;
+                if (sheetIsAuthority || song.KeyChangeKey.Length > 0)
+                {
+                    // A toggle left on with the TO key still blank isn't "cleared by the sheet".
+                    item.HasKeyChange = song.KeyChangeKey.Length > 0 ||
+                                        (item.HasKeyChange && item.KeyChangeKey.Trim().Length == 0);
+                    item.KeyChangeKey = song.KeyChangeKey;
+                }
+                if (sheetIsAuthority || song.KeyChangeAt.Length > 0)
+                    item.KeyChangeAt = song.KeyChangeAt;
+            }
+            finally
+            {
+                _applyingSheet = false;
+            }
         }
 
         UpdateSearchResults();
@@ -230,7 +298,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Adds a song from the master list (autocomplete pick), filling its default key.</summary>
     public void AddSong(Song song)
     {
-        AddItem(song.Name, song.DefaultKey, song.Length, song.Bpm);
+        AddItem(song.Name, song.DefaultKey, song.Length, song.Bpm, song);
         SearchText = "";
     }
 
@@ -243,43 +311,41 @@ public partial class MainViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>Adds a manually entered song. It joins the service immediately; if signed in
-    /// to Google and the song isn't in the master list, it's also appended to the Songs tab.</summary>
+    /// <summary>Adds a manually entered song. It joins the service immediately; if it isn't in
+    /// the master list it also goes through the sheet queue, which appends it to the Songs tab
+    /// (same serialized path as key-detail edits, so a quick follow-up edit can't double it up).</summary>
     public void AddManualSong(string name, string key)
     {
         name = name.Trim();
         key = Music.Keys.Normalize(key);
         if (name.Length == 0)
             return;
-        AddItem(name, key, "", "");
-        _ = AppendToSheetAsync(name, key);
-    }
-
-    private async Task AppendToSheetAsync(string name, string key)
-    {
-        if (!GoogleAuth.IsSignedIn)
-            return; // the public CSV endpoint can't write — sheet stays as-is
-        if (string.IsNullOrWhiteSpace(_config.SpreadsheetId) || _config.SpreadsheetId == "PUT_ID_HERE")
-            return;
-        if (_allSongs.Any(s => string.Equals(s.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)))
-            return; // already in the sheet
-        try
+        var master = _allSongs.FirstOrDefault(s => string.Equals(s.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+        var item = AddItem(name, key, master?.Length ?? "", master?.Bpm ?? "", master);
+        if (master is null)
         {
-            await _sheets.AppendSongAsync(_config, name, key);
-            // Into the master list too, so search finds it and a repeat add doesn't duplicate it.
-            _allSongs.Add(new Song { Name = name, DefaultKey = key, Length = "", Bpm = "" });
-            StatusText = $"Added '{name}' to the sheet";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"'{name}' wasn't added to the sheet ({Brief(ex)})";
+            item.SheetAddOnly = true;
+            QueueSheetWrite(item);
         }
     }
 
-    private void AddItem(string name, string key, string length, string bpm)
+    private SetItemViewModel AddItem(string name, string key, string length, string bpm, Song? master = null)
     {
         // OnItemsChanged renumbers and queues the save.
-        AttachItem(new SetItemViewModel { Name = name, SelectedKey = key, Leader = "", Length = length, Bpm = bpm });
+        var item = new SetItemViewModel
+        {
+            Name = name,
+            SelectedKey = key,
+            Leader = "",
+            Length = length,
+            Bpm = bpm,
+            IsChromatic = master?.Chromatic ?? false,
+            HasKeyChange = master is { KeyChangeKey.Length: > 0 },
+            KeyChangeKey = master?.KeyChangeKey ?? "",
+            KeyChangeAt = master?.KeyChangeAt ?? "",
+        };
+        AttachItem(item);
+        return item;
     }
 
     private void AttachItem(SetItemViewModel item)
@@ -330,7 +396,10 @@ public partial class MainViewModel : ObservableObject
         foreach (var other in Items)
             other.IsPlaying = false;
         item.IsPlaying = true;
-        Timecode.Cue(item.Name, Music.SongLength.ParseSeconds(item.Length), item.Bpm);
+        Timecode.Cue(item.Name, Music.SongLength.ParseSeconds(item.Length), item.Bpm,
+            item.IsChromatic, item.SelectedKey,
+            item.KeyChangeActive ? item.KeyChangeKey.Trim() : "",
+            item.KeyChangeActive ? Music.SongLength.ParseSeconds(item.KeyChangeAt) : 0);
     }
 
     // ---------- service-level actions ----------
@@ -360,8 +429,20 @@ public partial class MainViewModel : ObservableObject
         {
             var item = Items[i];
             sb.Append($"{i + 1}. {item.Name}");
-            if (!string.IsNullOrWhiteSpace(item.SelectedKey))
-                sb.Append($" — Key {item.SelectedKey.Trim()}");
+            if (!string.IsNullOrWhiteSpace(item.SelectedKey) || item.IsChromatic)
+            {
+                sb.Append(" — Key");
+                if (!string.IsNullOrWhiteSpace(item.SelectedKey))
+                    sb.Append($" {item.SelectedKey.Trim()}");
+                if (item.IsChromatic)
+                    sb.Append(" (chromatic)");
+                if (item.KeyChangeActive)
+                {
+                    sb.Append($" → {item.KeyChangeKey.Trim()}");
+                    if (!string.IsNullOrWhiteSpace(item.KeyChangeAt))
+                        sb.Append($" at {item.KeyChangeAt.Trim()}");
+                }
+            }
             if (!string.IsNullOrWhiteSpace(item.Leader))
                 sb.Append($" — Leader: {item.Leader.Trim()}");
             sb.AppendLine();
@@ -387,21 +468,203 @@ public partial class MainViewModel : ObservableObject
 
     private void OnItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(SetItemViewModel.Index)
-            or nameof(SetItemViewModel.IsEditing)
-            or nameof(SetItemViewModel.IsPlaying))
+        if (sender is not SetItemViewModel item)
             return;
 
-        // A leader typed in by hand joins the dropdown for the rest of the session.
-        if (e.PropertyName == nameof(SetItemViewModel.Leader) &&
-            sender is SetItemViewModel item &&
-            !string.IsNullOrWhiteSpace(item.Leader) &&
-            !Leaders.Contains(item.Leader.Trim(), StringComparer.OrdinalIgnoreCase))
+        if (e.PropertyName == nameof(SetItemViewModel.IsEditing))
         {
-            Leaders.Add(item.Leader.Trim());
+            // A hand-typed leader joins the dropdown when the editor CLOSES — the editable
+            // ComboBox pushes every keystroke, so adding on change fills the list with "S", "Sa", "Sar"…
+            if (!item.IsEditing)
+                AddLeader(item.Leader);
+            return;
+        }
+        if (e.PropertyName is nameof(SetItemViewModel.Index) or nameof(SetItemViewModel.IsPlaying))
+            return;
+
+        // Chromatic / key change edits are master-song data — push them to the sheet.
+        if (!_applyingSheet &&
+            e.PropertyName is nameof(SetItemViewModel.IsChromatic)
+                or nameof(SetItemViewModel.HasKeyChange)
+                or nameof(SetItemViewModel.KeyChangeKey)
+                or nameof(SetItemViewModel.KeyChangeAt))
+        {
+            item.SheetAddOnly = false; // a real edit supersedes a pending plain add
+            QueueSheetWrite(item);
         }
 
         SaveCurrent();
+    }
+
+    // ---------- sheet write-back (chromatic / key change / manual adds) ----------
+    //
+    // One serialized worker: edits are marked dirty (persisted) and queued; a pass writes
+    // them one at a time, never overlapping with itself. Failures keep the item queued and
+    // back off (10 s → 2 min); signed-out edits wait for a sign-in; anything still dirty at
+    // shutdown is re-queued on the next launch. So the sheet always converges on what's shown.
+
+    private static readonly TimeSpan SheetWriteDebounce = TimeSpan.FromMilliseconds(1500);
+    private readonly HashSet<SetItemViewModel> _pendingSheetWrites = new();
+    private readonly DispatcherTimer _sheetWriteTimer;
+    private bool _sheetWriteBusy;
+    private int _sheetWriteFailures;
+    private bool _signedOutNagShown;    // the "sign in to sync" line once per session, not per keystroke
+    private bool _refreshAgain;         // a write landed while a fetch was in flight — fetch once more
+    private long _lastSheetWriteTick;   // 0 until the first successful write (every fetch is newer than that)
+    private bool _applyingSheet;        // true while a sync is pushing sheet values INTO rows
+
+    private void QueueSheetWrite(SetItemViewModel item)
+    {
+        if (_loadingCurrent)
+            return;
+        item.SheetDirty = true;
+        _pendingSheetWrites.Add(item);
+        RearmSheetWrite(SheetWriteDebounce);
+    }
+
+    private void RearmSheetWrite(TimeSpan delay)
+    {
+        _sheetWriteTimer.Stop();
+        _sheetWriteTimer.Interval = delay;
+        _sheetWriteTimer.Start();
+    }
+
+    /// <summary>Called after a sign-in so edits parked while signed out (or refused earlier) go up.</summary>
+    public void RetrySheetWrites()
+    {
+        _sheetWriteFailures = 0;
+        foreach (var item in Items)
+        {
+            if (item.SheetDirty)
+                _pendingSheetWrites.Add(item);
+        }
+        if (_pendingSheetWrites.Count > 0)
+            RearmSheetWrite(SheetWriteDebounce);
+    }
+
+    private static (string Name, string Key, bool Chromatic, string ChangeKey, string ChangeAt) SheetSnapshot(SetItemViewModel item) =>
+        (item.Name.Trim(),
+         Music.Keys.Normalize(item.SelectedKey),
+         item.IsChromatic,
+         item.HasKeyChange ? Music.Keys.Normalize(item.KeyChangeKey) : "",
+         item.HasKeyChange ? item.KeyChangeAt.Trim() : "");
+
+    private async void OnSheetWriteTick(object? sender, EventArgs e)
+    {
+        _sheetWriteTimer.Stop();
+        if (_sheetWriteBusy)
+            return; // the running pass re-arms itself when it finishes
+
+        if (!GoogleAuth.IsSignedIn)
+        {
+            if (!_signedOutNagShown)
+            {
+                _signedOutNagShown = true;
+                StatusText = "Song details kept locally — sign in with Google (Settings) to sync them to the sheet";
+            }
+            return; // stays queued and dirty; RetrySheetWrites/RefreshAsync pick it up later
+        }
+        if (string.IsNullOrWhiteSpace(_config.SpreadsheetId) || _config.SpreadsheetId == "PUT_ID_HERE")
+            return;
+
+        _sheetWriteBusy = true;
+        var transientFailure = false;
+        try
+        {
+            // Rows removed from the service still get written: these are song details, not
+            // service details, and the user saw them applied.
+            foreach (var item in _pendingSheetWrites.ToList())
+            {
+                var snap = SheetSnapshot(item);
+                var addOnly = item.SheetAddOnly;
+                try
+                {
+                    if (addOnly)
+                    {
+                        var existing = await _sheets.EnsureSongAsync(_config, snap.Name, snap.Key);
+                        if (existing is { } cells)
+                            AdoptSheetExtras(item, cells.Chromatic, cells.KeyChangeKey, cells.KeyChangeAt);
+                        snap = SheetSnapshot(item);
+                    }
+                    else
+                    {
+                        await _sheets.UpdateSongExtrasAsync(_config, snap.Name, snap.Key, snap.Chromatic, snap.ChangeKey, snap.ChangeAt);
+                    }
+                    _lastSheetWriteTick = Environment.TickCount64;
+                    _sheetWriteFailures = 0;
+                    if (IsRefreshing)
+                        _refreshAgain = true; // that fetch predates this write — take one more
+
+                    var master = _allSongs.FirstOrDefault(s =>
+                        string.Equals(s.Name.Trim(), snap.Name, StringComparison.OrdinalIgnoreCase));
+                    if (master is null)
+                    {
+                        master = new Song { Name = snap.Name, DefaultKey = snap.Key };
+                        _allSongs.Add(master);
+                    }
+                    master.Chromatic = snap.Chromatic;
+                    master.KeyChangeKey = snap.ChangeKey;
+                    master.KeyChangeAt = snap.ChangeAt;
+
+                    // Edited again while the write was in flight? Then it needs another pass.
+                    if (SheetSnapshot(item) == snap && item.SheetAddOnly == addOnly)
+                    {
+                        _pendingSheetWrites.Remove(item);
+                        item.SheetDirty = false;
+                        item.SheetAddOnly = false;
+                    }
+                    StatusText = addOnly ? $"Added '{snap.Name}' to the sheet" : $"Sheet updated — '{snap.Name}'";
+                }
+                catch (InvalidOperationException ex)
+                {
+                    // Google said no (no edit rights, columns in use, tab missing): retrying won't
+                    // change that. Park it — still dirty, so a sign-in or the next launch retries.
+                    _pendingSheetWrites.Remove(item);
+                    StatusText = $"'{snap.Name}' not synced to the sheet — {ex.Message}";
+                }
+                catch (Exception ex)
+                {
+                    _sheetWriteFailures++;
+                    StatusText = $"'{snap.Name}' not synced to the sheet yet — will retry ({Brief(ex)})";
+                    transientFailure = true;
+                    break; // back off instead of hammering a dead connection with the rest
+                }
+            }
+        }
+        finally
+        {
+            _sheetWriteBusy = false;
+        }
+
+        if (_pendingSheetWrites.Count > 0)
+        {
+            var backoff = transientFailure
+                ? TimeSpan.FromSeconds(Math.Min(120, 10 * Math.Pow(2, _sheetWriteFailures - 1)))
+                : SheetWriteDebounce;
+            RearmSheetWrite(backoff);
+        }
+        if (_refreshAgain && !IsRefreshing)
+        {
+            _refreshAgain = false;
+            _ = RefreshAsync();
+        }
+    }
+
+    /// <summary>Pushes sheet-side key details into a row without triggering a write-back.</summary>
+    private void AdoptSheetExtras(SetItemViewModel item, bool chromatic, string keyChangeKey, string keyChangeAt)
+    {
+        _applyingSheet = true;
+        try
+        {
+            item.IsChromatic = chromatic;
+            item.HasKeyChange = keyChangeKey.Length > 0;
+            item.KeyChangeKey = keyChangeKey;
+            item.KeyChangeAt = keyChangeAt;
+        }
+        finally
+        {
+            _applyingSheet = false;
+        }
     }
 
     private void Renumber()
@@ -442,6 +705,12 @@ public partial class MainViewModel : ObservableObject
                 Length = i.Length,
                 Bpm = i.Bpm,
                 Completed = i.IsCompleted,
+                Chromatic = i.IsChromatic,
+                HasKeyChange = i.HasKeyChange,
+                KeyChangeKey = i.KeyChangeKey,
+                KeyChangeAt = i.KeyChangeAt,
+                SheetDirty = i.SheetDirty,
+                SheetAddOnly = i.SheetAddOnly,
             }).ToList(),
         });
     }

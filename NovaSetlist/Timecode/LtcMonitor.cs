@@ -30,6 +30,11 @@ public sealed class LtcMonitor : IDisposable
     // bit 32 = drop-frame, bits 24..31 h, 16..23 m, 8..15 s, 0..7 f. -1 = none yet.
     private long _frameBits = -1;
 
+    // Wall-clock tick of the last audio buffer. The decoder measures "signal" in samples,
+    // so if a virtual device (Dante/NDI/VB-Cable) silently stops delivering, sample time
+    // freezes and SIGNAL/LOCK would read true forever — the UI checks this instead.
+    private long _lastAudioTick = Environment.TickCount64;
+
     public string Description { get; }
 
     public LtcMonitor(int deviceNumber)
@@ -80,6 +85,9 @@ public sealed class LtcMonitor : IDisposable
     public TimecodeRate DetectedRate => _decoder.DetectedRate;
     public string? Error => _error;
 
+    /// <summary>Milliseconds since the input last delivered audio; large = capture has stalled.</summary>
+    public long MsSinceAudio => Environment.TickCount64 - Volatile.Read(ref _lastAudioTick);
+
     /// <summary>Packed last confirmed frame (see _frameBits layout), or -1 if none yet.
     /// Cheap to poll — compare against the previous value before unpacking.</summary>
     public long CurrentBits => Interlocked.Read(ref _frameBits);
@@ -91,12 +99,14 @@ public sealed class LtcMonitor : IDisposable
 
     public void Start()
     {
+        Volatile.Write(ref _lastAudioTick, Environment.TickCount64);
         _worker.Start();
         _waveIn.StartRecording();
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
+        Volatile.Write(ref _lastAudioTick, Environment.TickCount64);
         var src = MemoryMarshal.Cast<byte, short>(e.Buffer.AsSpan(0, e.BytesRecorded));
         int frames = src.Length / _channels;
         if (frames <= 0)

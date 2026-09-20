@@ -43,6 +43,9 @@ public sealed class SheetService
                 DefaultKey = Music.Keys.Normalize(Cell(r, 1)),
                 Length = Cell(r, 2),
                 Bpm = Cell(r, 3),
+                Chromatic = IsTruthy(Cell(r, 4)),
+                KeyChangeKey = Music.Keys.Normalize(Cell(r, 5)),
+                KeyChangeAt = Cell(r, 6),
             })
             .Where(s => s.Name.Length > 0)
             .ToList();
@@ -72,9 +75,7 @@ public sealed class SheetService
         var url = $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(spreadsheetId)}" +
                   $"/values/{Uri.EscapeDataString(range)}";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new("Bearer", await _auth.GetAccessTokenAsync());
-        using var response = await Http.SendAsync(request);
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Get, url));
 
         if (response.StatusCode == HttpStatusCode.Forbidden)
             throw new InvalidOperationException(
@@ -94,32 +95,259 @@ public sealed class SheetService
         foreach (var row in values.EnumerateArray())
         {
             if (first) { first = false; continue; } // header row
-            rows.Add(row.EnumerateArray()
-                .Select(c => c.ValueKind == JsonValueKind.String ? c.GetString() ?? "" : c.ToString())
-                .ToArray());
+            rows.Add(row.EnumerateArray().Select(CellText).ToArray());
         }
         return rows;
     }
 
-    /// <summary>Appends a song row (name + default key) to the Songs tab. Requires Google sign-in.</summary>
-    public async Task AppendSongAsync(AppConfig config, string name, string key)
+    /// <summary>
+    /// Writes a song's Chromatic / Key Change / Key Change At cells (columns E:G),
+    /// locating the row by name at write time so a reordered sheet can't be hit
+    /// in the wrong place. A song missing from the sheet is appended in full.
+    /// Requires Google sign-in.
+    /// </summary>
+    public async Task UpdateSongExtrasAsync(AppConfig config, string name, string key,
+        bool chromatic, string keyChangeKey, string keyChangeAt)
     {
-        var range = "'" + config.SongsTab.Replace("'", "''") + "'!A:D";
+        var row = await FindRowAsync(config, name);
+
+        // Both paths touch columns E:G, which a plain 4-column Songs tab doesn't have yet.
+        await EnsureExtraColumnsAsync(config);
+
+        if (row < 0)
+        {
+            await AppendRowAsync(config, new object[] { name, key, "", "", chromatic, keyChangeKey, keyChangeAt });
+            return;
+        }
+        await PutValuesAsync(config, $"E{row}:G{row}", new object[] { chromatic, keyChangeKey, keyChangeAt });
+    }
+
+    /// <summary>
+    /// Manual add: appends the song (name + key) if the sheet doesn't have it and returns null;
+    /// if it's already there, returns its Chromatic / Key Change / At cells so the row can adopt
+    /// them — another machine's details must never be overwritten by a plain add. Works on a
+    /// sheet without the E:G columns (nothing beyond B is written).
+    /// </summary>
+    public async Task<(bool Chromatic, string KeyChangeKey, string KeyChangeAt)?> EnsureSongAsync(
+        AppConfig config, string name, string key)
+    {
+        var row = await FindRowAsync(config, name);
+        if (row < 0)
+        {
+            await AppendRowAsync(config, new object[] { name, key });
+            return null;
+        }
+
+        string[] cells;
+        try
+        {
+            var got = await GetRangeAsync(config, $"E{row}:G{row}");
+            cells = got.Count > 0 ? got[0] : Array.Empty<string>();
+        }
+        catch (InvalidOperationException)
+        {
+            cells = Array.Empty<string>(); // no E:G columns yet — nothing to adopt
+        }
+        return (IsTruthy(Cell(cells, 0)), Music.Keys.Normalize(Cell(cells, 1)), Cell(cells, 2));
+    }
+
+    /// <summary>1-based sheet row of the song, matched by trimmed name (case-insensitive); -1 if absent.</summary>
+    private async Task<int> FindRowAsync(AppConfig config, string name)
+    {
+        var names = await GetColumnAsync(config, "A");
+        for (var i = 1; i < names.Count; i++) // skip the header row
+        {
+            if (string.Equals(names[i].Trim(), name, StringComparison.OrdinalIgnoreCase))
+                return i + 1;
+        }
+        return -1;
+    }
+
+    private static readonly string[] ExtraHeaders = { "Chromatic", "Key Change", "Key Change At" };
+    private (string Id, string Tab)? _columnsCheckedFor;
+    private Task? _columnsCheck;
+
+    /// <summary>
+    /// Once per run per sheet/tab: widens the Songs tab to at least 7 columns (Google refuses
+    /// to read OR write a range past the grid edge — "exceeds grid limits") and labels E1:G1
+    /// if they're blank. If E:G already hold something else, refuses rather than overwrite it.
+    /// Concurrent callers share one in-flight check.
+    /// </summary>
+    private async Task EnsureExtraColumnsAsync(AppConfig config)
+    {
+        var key = (config.SpreadsheetId, config.SongsTab);
+        if (_columnsCheckedFor == key)
+            return;
+        if (_columnsCheck is null || _columnsCheck.IsCompleted)
+            _columnsCheck = CheckColumnsAsync(config, key);
+        await _columnsCheck;
+    }
+
+    private async Task CheckColumnsAsync(AppConfig config, (string, string) key)
+    {
+        var (sheetId, columnCount) = await GetSheetGridAsync(config);
+        if (columnCount < 7)
+            await AppendColumnsAsync(config, sheetId, 7 - columnCount);
+
+        var header = await GetRangeAsync(config, "E1:G1");
+        var cells = header.Count > 0 ? header[0] : Array.Empty<string>();
+        if (cells.All(c => c.Trim().Length == 0))
+        {
+            await PutValuesAsync(config, "E1:G1", ExtraHeaders.Cast<object>().ToArray());
+        }
+        else
+        {
+            for (var i = 0; i < ExtraHeaders.Length; i++)
+            {
+                var have = i < cells.Length ? cells[i].Trim() : "";
+                if (have.Length > 0 && !string.Equals(have, ExtraHeaders[i], StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        $"Columns E–G of '{config.SongsTab}' are already used for '{have}' — key details can't be synced until they're free or renamed to Chromatic / Key Change / Key Change At.");
+            }
+        }
+        _columnsCheckedFor = key;
+    }
+
+    /// <summary>Numeric id and current column count of the Songs tab (spreadsheet metadata).</summary>
+    private async Task<(long SheetId, int ColumnCount)> GetSheetGridAsync(AppConfig config)
+    {
         var url = $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(config.SpreadsheetId)}" +
-                  $"/values/{Uri.EscapeDataString(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS";
+                  "?fields=sheets.properties(sheetId,title,gridProperties.columnCount)";
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Get, url));
+        await ThrowIfFailedAsync(response);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Authorization = new("Bearer", await _auth.GetAccessTokenAsync());
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(new { values = new[] { new[] { name, key } } }),
-            Encoding.UTF8, "application/json");
-        using var response = await Http.SendAsync(request);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        foreach (var sheet in doc.RootElement.GetProperty("sheets").EnumerateArray())
+        {
+            var props = sheet.GetProperty("properties");
+            if (!string.Equals(props.GetProperty("title").GetString(), config.SongsTab, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var cols = props.TryGetProperty("gridProperties", out var grid) &&
+                       grid.TryGetProperty("columnCount", out var cc) ? cc.GetInt32() : 0;
+            return (props.GetProperty("sheetId").GetInt64(), cols);
+        }
+        throw new InvalidOperationException($"Tab '{config.SongsTab}' wasn't found in the sheet — check the tab name in Settings.");
+    }
 
+    private async Task AppendColumnsAsync(AppConfig config, long sheetId, int count)
+    {
+        var url = $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(config.SpreadsheetId)}:batchUpdate";
+        var body = JsonSerializer.Serialize(new
+        {
+            requests = new[]
+            {
+                new { appendDimension = new { sheetId, dimension = "COLUMNS", length = count } },
+            },
+        });
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        });
+        await ThrowIfFailedAsync(response);
+    }
+
+    /// <summary>Sends with a bearer token; on 401 (token revoked server-side while still
+    /// within its hour) drops the cached token and retries once with a fresh one.</summary>
+    private async Task<HttpResponseMessage> SendAuthedAsync(Func<HttpRequestMessage> make)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var request = make();
+            request.Headers.Authorization = new("Bearer", await _auth.GetAccessTokenAsync());
+            var response = await Http.SendAsync(request);
+            if (response.StatusCode != HttpStatusCode.Unauthorized || attempt > 0)
+                return response;
+            response.Dispose();
+            _auth.InvalidateAccessToken();
+        }
+    }
+
+    private async Task<List<string>> GetColumnAsync(AppConfig config, string column)
+    {
+        var rows = await GetRangeAsync(config, $"{column}:{column}");
+        return rows.Select(r => r.Length > 0 ? r[0] : "").ToList();
+    }
+
+    private async Task<List<string[]>> GetRangeAsync(AppConfig config, string a1)
+    {
+        var url = ValuesUrl(config, a1);
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Get, url));
+        await ThrowIfFailedAsync(response);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rows = new List<string[]>();
+        if (!doc.RootElement.TryGetProperty("values", out var values))
+            return rows;
+        foreach (var row in values.EnumerateArray())
+            rows.Add(row.EnumerateArray().Select(CellText).ToArray());
+        return rows;
+    }
+
+    // RAW, not USER_ENTERED: typed-in "1:45" would become a Sheets time value (formatted
+    // "1:45:00 AM" on read-back) and a name starting with "=" would become a formula. Booleans
+    // are sent as JSON true/false, which RAW stores as real checkbox-compatible booleans.
+    private async Task PutValuesAsync(AppConfig config, string a1, object[] cells)
+    {
+        var url = ValuesUrl(config, a1) + "?valueInputOption=RAW";
+        var body = JsonSerializer.Serialize(new { values = new[] { cells } });
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Put, url)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        });
+        await ThrowIfFailedAsync(response);
+    }
+
+    private async Task AppendRowAsync(AppConfig config, object[] cells)
+    {
+        var url = ValuesUrl(config, "A:G") + ":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS";
+        var body = JsonSerializer.Serialize(new { values = new[] { cells } });
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        });
+        await ThrowIfFailedAsync(response);
+    }
+
+    /// <summary>…/values/'Songs'!{a1} — the tab name quoted, single quotes doubled.</summary>
+    private static string ValuesUrl(AppConfig config, string a1)
+    {
+        var range = "'" + config.SongsTab.Replace("'", "''") + "'!" + a1;
+        return $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(config.SpreadsheetId)}" +
+               $"/values/{Uri.EscapeDataString(range)}";
+    }
+
+    /// <summary>Turns a failed Sheets response into a readable error: a friendly line for
+    /// "no edit access", otherwise Google's own message with the status code.</summary>
+    private async Task ThrowIfFailedAsync(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
         if (response.StatusCode == HttpStatusCode.Forbidden)
             throw new InvalidOperationException(
-                $"Google wouldn't allow the edit — check {_auth.Email} can edit the sheet, or sign out and back in to grant edit access.");
-        response.EnsureSuccessStatusCode();
+                $"Google refused (403) — check {_auth.Email} can edit the sheet, or sign out and back in to grant edit access.");
+
+        var detail = "";
+        try
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            if (doc.RootElement.TryGetProperty("error", out var err) &&
+                err.TryGetProperty("message", out var msg))
+                detail = msg.GetString() ?? "";
+        }
+        catch
+        {
+            // Not JSON — the status code alone will have to do.
+        }
+        throw new InvalidOperationException(
+            $"Google Sheets said {(int)response.StatusCode}{(detail.Length > 0 ? ": " + detail : "")}");
     }
+
+    private static string CellText(JsonElement c) =>
+        c.ValueKind == JsonValueKind.String ? c.GetString() ?? "" : c.ToString();
+
+    /// <summary>Sheet-style truthiness for the Chromatic column: TRUE / yes / y / 1 / x / ✓.</summary>
+    private static bool IsTruthy(string cell) =>
+        cell.Trim().ToUpperInvariant() is "TRUE" or "YES" or "Y" or "1" or "X" or "✓" or "CHROMATIC";
 
     // ---------- not signed in: public gviz CSV ----------
 

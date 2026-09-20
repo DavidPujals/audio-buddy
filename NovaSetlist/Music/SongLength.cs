@@ -13,7 +13,9 @@ public static class SongLength
             return 0;
 
         var parts = text.Trim().Split(':');
-        if (parts.Length is < 2 or > 4)
+        if (parts.Length == 1)
+            return int.TryParse(parts[0], out var plain) && plain > 0 ? plain : 0; // bare seconds ("105")
+        if (parts.Length > 4)
             return 0;
 
         var nums = new int[parts.Length];

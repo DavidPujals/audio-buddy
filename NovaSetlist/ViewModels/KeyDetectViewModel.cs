@@ -63,13 +63,23 @@ public partial class KeyDetectViewModel : ObservableObject, IDisposable
         var names = new List<string> { OffDevice };
         names.AddRange(WdmInput.DeviceNames());
 
-        if (names.SequenceEqual(Devices))
-            return;
+        // A device that's unplugged right now stays listed and selected — dropping it here
+        // would persist "" and silently forget the choice the moment Settings opens.
         var keep = SelectedDevice;
-        Devices.Clear();
-        foreach (var n in names)
-            Devices.Add(n);
-        SelectedDevice = Devices.Contains(keep) ? keep : OffDevice;
+        var present = names.Contains(keep);
+        if (keep != OffDevice && !present)
+            names.Add(keep);
+
+        if (!names.SequenceEqual(Devices))
+        {
+            Devices.Clear();
+            foreach (var n in names)
+                Devices.Add(n);
+            SelectedDevice = keep;
+        }
+        // Re-plugged since the input died? Same name, so no change event — restart it here.
+        if (keep != OffDevice && present && _detector is null && _timer is not null)
+            StartDetector(keep);
     }
 
     partial void OnSelectedDeviceChanged(string value)

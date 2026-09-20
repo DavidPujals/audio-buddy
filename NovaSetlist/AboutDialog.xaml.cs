@@ -20,7 +20,14 @@ public partial class AboutDialog : Window
 
     private void Link_RequestNavigate(object sender, RequestNavigateEventArgs e)
     {
-        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+        try
+        {
+            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch
+        {
+            // No browser association / blocked by policy — the URL is shown as text anyway.
+        }
         e.Handled = true;
     }
 
