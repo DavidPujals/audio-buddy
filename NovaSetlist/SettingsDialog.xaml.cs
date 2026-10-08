@@ -21,7 +21,57 @@ public partial class SettingsDialog : Window
     public bool SplFast => SplResponseBox.SelectedIndex == 1;
     public double SplYellowLevel => ParseLevel(SplYellowBox.Text, _vm.Spl.YellowFrom);
     public double SplRedLevel => ParseLevel(SplRedBox.Text, _vm.Spl.RedFrom);
-    public string PlaybackHost => PlaybackHostBox.Text.Trim();
+    /// <summary>The host to connect to: a scan result ("Name  (10.1.2.3)") collapses to its address.</summary>
+    public string PlaybackHost
+    {
+        get
+        {
+            var text = PlaybackHostBox.Text.Trim();
+            var found = _found.FirstOrDefault(f => f.Label == text);
+            return found?.Address ?? text;
+        }
+    }
+
+    private List<Services.PlaybackDiscovery.Found> _found = new();
+    private System.Threading.CancellationTokenSource? _scan;
+
+    private async void FindPlayback_Click(object sender, RoutedEventArgs e)
+    {
+        _scan?.Cancel();
+        _scan = new System.Threading.CancellationTokenSource();
+        var token = _scan.Token;
+        FindPlaybackButton.IsEnabled = false;
+        var progress = new Progress<string>(s => PlaybackFindText.Text = "Scanning — " + s);
+        try
+        {
+            _found = await Services.PlaybackDiscovery.ScanAsync(progress, token);
+            PlaybackHostBox.ItemsSource = _found.Select(f => f.Label).ToList();
+            if (_found.Count == 0)
+            {
+                PlaybackFindText.Text = "No Playback found on this PC's networks. Is Playback open with Allow Remote Connections on, and on the same network?";
+            }
+            else
+            {
+                PlaybackHostBox.Text = _found[0].Label;
+                PlaybackFindText.Text = _found.Count == 1
+                    ? $"Found Playback at {_found[0].Label} — Save & sync to connect."
+                    : $"Found {_found.Count} — pick one, then Save & sync to connect.";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // superseded by a newer scan or the window closed
+        }
+        catch (Exception ex)
+        {
+            PlaybackFindText.Text = "Scan failed — " + ex.Message;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+                FindPlaybackButton.IsEnabled = true;
+        }
+    }
 
     public SettingsDialog(MainViewModel vm)
     {
@@ -150,6 +200,7 @@ public partial class SettingsDialog : Window
     protected override void OnClosed(EventArgs e)
     {
         _closing.Cancel();
+        _scan?.Cancel();
         if (DialogResult != true)
             _vm.Spl.Offset = _originalOffset; // cancelled — undo the live calibration trim
         base.OnClosed(e);

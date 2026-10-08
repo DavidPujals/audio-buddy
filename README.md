@@ -74,9 +74,14 @@ Give it a second WDM input carrying the band / music feed (Settings → Audio in
 
 ### MultiTracks Playback
 
-Put the Playback PC's name or IP in **Settings → MultiTracks Playback → Host** (Playback itself needs *Allow Remote Connections* on — the setting doesn't always survive a Playback relaunch). The PLAYBACK section then shows what Playback is on and its playhead, green while playing, amber when the heartbeat goes stale (5 s) and red when the PC can't be reached. The app only listens on Playback's remote-control channel (the one the Playback Remote iPad app uses, port 8080) and never sends anything.
+In **Settings → MultiTracks Playback** click **Find Playback**: the app sweeps the networks this PC is on (port 8080, then checks that whatever answers really speaks Playback's remote protocol) and lists what it finds — pick one and **Save & sync**. You can also type a name or IP (`host:port` if the port is forwarded). Playback itself needs *Allow Remote Connections* on, which doesn't always survive a Playback relaunch. The PLAYBACK section then shows what Playback is on and its playhead, green while playing, amber when the heartbeat goes stale (5 s) and red when the PC can't be reached. The channel is the one the Playback Remote iPad app uses; the app only listens — the one exception is the walk below, which sends the same Previous/Next the Remote app would.
 
-Playback reports songs as numbers, not names. To teach the app a name: select the song in Playback, then right-click its row here and choose **Link to the song playing in Playback**. Links are remembered per machine (`%APPDATA%\NovaSetlist\playback-map.json`), so one rehearsal covers a setlist. Until linked, the panel shows `Song 91000003 — not linked yet`.
+Playback reports songs as numbers, not names, and its protocol has no way to ask for them. Two ways to get names:
+
+- **Match songs by order** (button in the PLAYBACK section, Playback must be stopped): the app steps Playback through its setlist — Previous to the start, Next to the end, then back to the song it was on — and names Playback song N after row N here. One click per setlist, about two seconds per song. If the two lists aren't in the same order, fix individual songs with the next option.
+- **Link one song**: select the song in Playback, then right-click its row here and choose **Link to the song playing in Playback**.
+
+Links are remembered per machine (`%APPDATA%\NovaSetlist\playback-map.json`). Until linked, the panel shows `Song 28727477 — not linked yet`. Every frame Playback sends is also logged to `%APPDATA%\NovaSetlist\playback-capture.jsonl` (rolling, ~3 MB) — the protocol is unofficial, and that file is the evidence when something looks wrong after a Playback update.
 
 ### SPL meter
 

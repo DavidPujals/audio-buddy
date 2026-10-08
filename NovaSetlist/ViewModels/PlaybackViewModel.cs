@@ -152,6 +152,74 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
                   (c.SetlistName.Length > 0 ? $" · {c.SetlistName}" : "");
     }
 
+    // ---------- match by order (setlist walk) ----------
+
+    /// <summary>
+    /// Learns Playback's song order by stepping it through its setlist — Previous to the
+    /// start, Next to the end, then back to where it was — using the same commands the
+    /// Playback Remote app sends. Playback accepts these only while STOPPED. Returns the
+    /// ordered song IDs, or throws with a user-readable reason.
+    /// </summary>
+    public async Task<List<long>> WalkSetlistAsync(IProgress<string>? progress, CancellationToken cancel)
+    {
+        var c = _client ?? throw new InvalidOperationException("Playback isn't set up — pick the Playback computer in Settings first.");
+        if (CurrentSongId < 0)
+            throw new InvalidOperationException("Playback isn't connected, or has no setlist loaded.");
+        if (c.Playing)
+            throw new InvalidOperationException("Playback is playing — stop it first (the walk only works while stopped).");
+
+        var start = c.SongId;
+        var ids = new List<long>();
+        try
+        {
+            // Rewind to the first song.
+            progress?.Report("rewinding to the first song…");
+            for (var guard = 0; guard < 200; guard++)
+            {
+                var before = c.SongId;
+                if (!await c.SendAsync("{\"transportPreviousSong\":{}}", cancel))
+                    throw new InvalidOperationException("Lost the connection to Playback.");
+                if (!await WaitForChangeAsync(c, before, cancel))
+                    break; // no change = already at the start
+            }
+
+            ids.Add(c.SongId);
+            progress?.Report($"reading the order… 1");
+            for (var guard = 0; guard < 200; guard++)
+            {
+                var before = c.SongId;
+                if (!await c.SendAsync("{\"transportNextSong\":{}}", cancel))
+                    throw new InvalidOperationException("Lost the connection to Playback.");
+                if (!await WaitForChangeAsync(c, before, cancel))
+                    break; // no change = last song
+                ids.Add(c.SongId);
+                progress?.Report($"reading the order… {ids.Count}");
+            }
+        }
+        finally
+        {
+            // Put Playback back on the song it was on, whatever happened.
+            if (start >= 0 && c.SongId != start)
+                await c.SendAsync($"{{\"setlistSelectSong\":{{\"setlistSongID\":{start}}}}}", CancellationToken.None);
+        }
+        return ids;
+    }
+
+    /// <summary>Waits up to ~2.5 s for the heartbeat song ID to move off <paramref name="before"/>.</summary>
+    private static async Task<bool> WaitForChangeAsync(PlaybackClient c, long before, CancellationToken cancel)
+    {
+        for (var i = 0; i < 25; i++)
+        {
+            await Task.Delay(100, cancel);
+            if (c.SongId != before && c.SongId >= 0)
+            {
+                await Task.Delay(150, cancel); // let the heartbeat settle before the next command
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ---------- name map ----------
 
     /// <summary>Remembers that Playback song <paramref name="id"/> is <paramref name="title"/> (per machine).</summary>

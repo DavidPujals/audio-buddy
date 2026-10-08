@@ -30,6 +30,8 @@ public sealed class PlaybackClient : IDisposable
     private readonly string _host;
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
+    private ClientWebSocket? _ws;
+    private readonly SemaphoreSlim _sendGate = new(1, 1);
 
     private int _connected;          // 1 while the socket is up
     private long _lastHeartbeatTick; // Environment.TickCount64 of the last heartbeat; 0 = none yet
@@ -92,6 +94,7 @@ public sealed class PlaybackClient : IDisposable
             finally
             {
                 Volatile.Write(ref _connected, 0);
+                _ws = null;
             }
 
             // A session that was actually receiving and then dropped comes back quickly;
@@ -123,6 +126,7 @@ public sealed class PlaybackClient : IDisposable
         }
         Volatile.Write(ref _connected, 1);
         _error = "";
+        _ws = ws;
 
         var buffer = new byte[64 * 1024];
         using var message = new MemoryStream();
@@ -158,8 +162,64 @@ public sealed class PlaybackClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Sends one of Playback's documented remote commands (the same messages the Playback
+    /// Remote app sends), e.g. {"transportNextSong":{}}. Only the explicit "match by order"
+    /// walk uses this; nothing else in the app ever sends. Returns false if not connected.
+    /// </summary>
+    public async Task<bool> SendAsync(string json, CancellationToken cancel = default)
+    {
+        var ws = _ws;
+        if (ws is null || ws.State != WebSocketState.Open)
+            return false;
+        await _sendGate.WaitAsync(cancel);
+        try
+        {
+            Capture("SENT " + json);
+            await ws.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, cancel);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            _sendGate.Release();
+        }
+    }
+
+    private static string CapturePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NovaSetlist", "playback-capture.jsonl");
+    private const long CaptureCapBytes = 3_000_000; // ~3 h of heartbeats, then it starts over
+    private StreamWriter? _capture;
+
+    /// <summary>Every frame goes to a rolling capture file. The protocol is unofficial and
+    /// undocumented by MultiTracks, so when something looks wrong this is the evidence.</summary>
+    private void Capture(string text)
+    {
+        try
+        {
+            if (_capture is null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(CapturePath)!);
+                if (File.Exists(CapturePath) && new FileInfo(CapturePath).Length > CaptureCapBytes)
+                    File.Delete(CapturePath);
+                _capture = new StreamWriter(CapturePath, append: true, Encoding.UTF8) { AutoFlush = true };
+            }
+            _capture.Write(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+            _capture.Write(' ');
+            _capture.WriteLine(text);
+        }
+        catch
+        {
+            _capture = null; // diagnostics only — never let logging break the listener
+        }
+    }
+
     private void Handle(string text)
     {
+        Capture(text);
         JsonDocument doc;
         try { doc = JsonDocument.Parse(text); }
         catch (JsonException) { return; } // not JSON — ignore
@@ -175,19 +235,30 @@ public sealed class PlaybackClient : IDisposable
                 // {"heartbeat":{"stateData":{"setlistSongID":91000001,"sequenceTime":12.4,
                 //   "sequencerPlayState":{"playing":{}}, ...}}}  — setlistSongID is ABSENT
                 // while the setlist is empty or still loading.
-                var id = state.TryGetProperty("setlistSongID", out var sid) && sid.TryGetInt64(out var v) ? v : -1;
                 var pos = state.TryGetProperty("sequenceTime", out var st) && st.TryGetDouble(out var p) ? p : 0;
                 var playing = state.TryGetProperty("sequencerPlayState", out var ps) &&
                               ps.ValueKind == JsonValueKind.Object && ps.TryGetProperty("playing", out _);
-                Volatile.Write(ref _songId, id);
+                // Observed on Playback for macOS (Oct 2026): the song ID is in every heartbeat
+                // while STOPPED but disappears from the heartbeat while PLAYING. The song
+                // hasn't changed, so keep the last ID rather than showing "no song" mid-song.
+                if (state.TryGetProperty("setlistSongID", out var sid) && sid.TryGetInt64(out var v))
+                    Volatile.Write(ref _songId, v);
                 Volatile.Write(ref _positionMilli, (long)(pos * 1000));
                 Volatile.Write(ref _playing, playing ? 1 : 0);
                 Volatile.Write(ref _lastHeartbeatTick, Environment.TickCount64);
                 return;
             }
 
+            if (root.TryGetProperty("setlistSelectSong", out var sel) &&
+                sel.TryGetProperty("setlistSongID", out var selId) && selId.TryGetInt64(out var selected))
+            {
+                Volatile.Write(ref _songId, selected);
+                return;
+            }
+
             if (root.TryGetProperty("contentLoadSetlist", out var load))
             {
+                Volatile.Write(ref _songId, -1); // new setlist — wait for a heartbeat to name a song
                 if (load.TryGetProperty("setlistData", out var data) &&
                     data.TryGetProperty("setlistName", out var name) && name.ValueKind == JsonValueKind.String)
                     _setlistName = name.GetString() ?? "";
@@ -252,5 +323,6 @@ public sealed class PlaybackClient : IDisposable
         _cts.Cancel();
         try { _loop?.Wait(500); } catch { /* cancelled */ }
         _cts.Dispose();
+        try { _capture?.Dispose(); } catch { /* already closed */ }
     }
 }

@@ -256,6 +256,39 @@ public partial class MainViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Names every Playback song in one go by assuming Playback's setlist is in the same
+    /// order as this one: walks Playback's setlist, then links song N to row N.
+    /// </summary>
+    public async Task MatchPlaybackByOrderAsync()
+    {
+        if (Items.Count == 0)
+        {
+            StatusText = "Add the songs to this setlist first — the match links Playback's songs to these rows in order";
+            return;
+        }
+        List<long> ids;
+        try
+        {
+            var progress = new Progress<string>(s => StatusText = "Matching with Playback — " + s);
+            ids = await Playback.WalkSetlistAsync(progress, CancellationToken.None);
+        }
+        catch (InvalidOperationException ex)
+        {
+            StatusText = ex.Message;
+            return;
+        }
+
+        var n = Math.Min(ids.Count, Items.Count);
+        for (var i = 0; i < n; i++)
+            Playback.Learn(ids[i], Items[i].Name.Trim(), announce: false);
+        Playback.Learn(-1, "", announce: true); // refresh the panel text
+
+        StatusText = ids.Count == Items.Count
+            ? $"Matched {n} Playback songs to this setlist by order"
+            : $"Playback has {ids.Count} songs, this setlist has {Items.Count} — matched the first {n} by order; right-click a row → Link to fix any";
+    }
+
     /// <summary>Remembers that the song Playback is currently on is this row's song.</summary>
     public void LinkToPlayback(SetItemViewModel item)
     {

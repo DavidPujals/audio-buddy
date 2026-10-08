@@ -133,9 +133,18 @@
                        Fill="{StaticResource HairlineBrush}" />
         </Grid>
 
-        <TextBlock Text="HOST" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,8,0,5" />
-        <TextBox x:Name="PlaybackHostBox" MinHeight="30" FontFamily="Consolas" />
-        <TextBlock Text="Name or IP of the PC running Playback, with Allow Remote Connections turned on there (port 8080). Leave blank to turn the listener off."
+        <TextBlock Text="PLAYBACK COMPUTER" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,8,0,5" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ComboBox x:Name="PlaybackHostBox" Grid.Column="0" IsEditable="True" FontFamily="Consolas" MinHeight="30" />
+            <Button x:Name="FindPlaybackButton" Grid.Column="1" Content="Find Playback" MinWidth="110" Margin="8,0,0,0"
+                    Click="FindPlayback_Click" ToolTip="Scans this PC's networks for a Playback with Allow Remote Connections on" />
+        </Grid>
+        <TextBlock x:Name="PlaybackFindText"
+                   Text="Click Find Playback to scan the network, or type the Playback computer's name or IP. Playback needs Allow Remote Connections on (port 8080). Leave blank to turn the listener off."
                    Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
 
         <Grid Margin="0,20,0,0">

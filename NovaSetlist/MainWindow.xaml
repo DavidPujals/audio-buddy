@@ -1145,6 +1145,23 @@
                     <TextBlock Text="{Binding SubText}" HorizontalAlignment="Center"
                                Foreground="{StaticResource FaintBrush}" FontSize="11"
                                TextWrapping="Wrap" TextAlignment="Center" MaxWidth="270" />
+                    <Button Content="Match songs by order…" HorizontalAlignment="Center" Margin="0,6,0,0"
+                            Padding="10,3" FontSize="11" Click="MatchPlayback_Click"
+                            ToolTip="Steps Playback through its setlist (while stopped) and names each song from the row in the same position here">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding State}" Value="connected">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </StackPanel>
 
                 <!-- Live SPL(A) meter (optional — enabled in Settings) -->
