@@ -133,9 +133,11 @@
 
         <!-- Right-click menu for a setlist row -->
         <ContextMenu x:Key="RowMenu">
-            <MenuItem Header="Edit key, leader &amp; colour" Click="RowMenuEdit_Click" />
+            <MenuItem Header="Edit key, leader, note &amp; colour" Click="RowMenuEdit_Click" />
+            <MenuItem Header="Link to the song playing in Playback" Click="RowMenuLinkPlayback_Click"
+                      ToolTip="Teaches Audio Buddy that Playback's current song is this one" />
             <Separator Style="{StaticResource MenuSeparator}" />
-            <MenuItem Header="Remove from service" Click="RowMenuRemove_Click" />
+            <MenuItem Header="Remove from setlist" Click="RowMenuRemove_Click" />
         </ContextMenu>
 
         <!-- Instantiated per row only while its editor is open (see the ContentControl trigger) -->
@@ -223,6 +225,14 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,18,4">
+                    <TextBlock Text="NOTE" Style="{StaticResource SectionHeader}"
+                               FontSize="10" Margin="0,0,7,0" />
+                    <TextBox Width="260" VerticalAlignment="Center"
+                             Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Anything worth remembering for this song in this setlist — who's on harmonies, cues, reminders" />
+                </StackPanel>
             </WrapPanel>
         </DataTemplate>
 
@@ -271,8 +281,21 @@
                                     MouseMove="RowGrip_MouseMove"
                                     MouseLeftButtonUp="RowGrip_MouseLeftButtonUp"
                                     LostMouseCapture="RowGrip_LostMouseCapture">
-                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
-                                           FontSize="14" TextTrimming="CharacterEllipsis" Margin="0,0,10,0" />
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                                    <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Note}" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                               Foreground="{StaticResource DimBrush}" Margin="0,1,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Note}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
                             </Border>
 
                             <!-- Key · enharmonic · "→ D" key change, as one line so it can spill across both key columns -->
@@ -403,8 +426,21 @@
                                     MouseMove="RowGrip_MouseMove"
                                     MouseLeftButtonUp="RowGrip_MouseLeftButtonUp"
                                     LostMouseCapture="RowGrip_LostMouseCapture">
-                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
-                                           FontSize="14" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                    <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Note}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                               Foreground="{StaticResource DimBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Note}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
                             </Border>
 
                             <!-- Leader at the right edge -->
@@ -510,8 +546,19 @@
                     </Style>
                 </DockPanel.Style>
                 <Button DockPanel.Dock="Right" Margin="10,0,0,0" Content="Settings" Click="Settings_Click" />
-                <Button DockPanel.Dock="Right" Margin="6,0,0,0" Content="Copy as text" Command="{Binding CopyAsTextCommand}" />
-                <Button DockPanel.Dock="Right" Margin="6,0,0,0" Content="New service" Command="{Binding NewServiceCommand}" />
+                <Button DockPanel.Dock="Right" Margin="6,0,0,0" Content="Setlist ▾" Click="MenuButton_Click">
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="New setlist…" Click="NewSetlist_Click" />
+                            <MenuItem Header="Rename…" Click="RenameSetlist_Click" />
+                            <Separator Style="{StaticResource MenuSeparator}" />
+                            <MenuItem Header="Open…" Click="OpenSetlist_Click" />
+                            <MenuItem Header="Save as…" Click="SaveSetlistAs_Click" />
+                            <Separator Style="{StaticResource MenuSeparator}" />
+                            <MenuItem Header="Copy as text" Command="{Binding CopyAsTextCommand}" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
                 <Button DockPanel.Dock="Right" Margin="6,0,0,0" Content="Refresh" Command="{Binding RefreshCommand}" />
                 <Button DockPanel.Dock="Right" Margin="10,0,0,0" Content="+ Add manually" Click="AddManually_Click" />
 
@@ -663,8 +710,8 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="SERVICE ORDER" Style="{StaticResource SectionHeader}"
-                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="0" Text="{Binding SetlistHeader}" Style="{StaticResource SectionHeader}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="420" />
                     <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
                                Fill="{StaticResource HairlineBrush}" />
                 </Grid>
@@ -742,7 +789,11 @@
                                 <MenuItem Header="Add manually…" Click="AddManually_Click" />
                                 <Separator Style="{StaticResource MenuSeparator}" />
                                 <MenuItem Header="Refresh" Command="{Binding RefreshCommand}" />
-                                <MenuItem Header="New service" Command="{Binding NewServiceCommand}" />
+                                <Separator Style="{StaticResource MenuSeparator}" />
+                                <MenuItem Header="New setlist…" Click="NewSetlist_Click" />
+                                <MenuItem Header="Rename setlist…" Click="RenameSetlist_Click" />
+                                <MenuItem Header="Open setlist…" Click="OpenSetlist_Click" />
+                                <MenuItem Header="Save setlist as…" Click="SaveSetlistAs_Click" />
                                 <MenuItem Header="Copy as text" Command="{Binding CopyAsTextCommand}" />
                                 <Separator Style="{StaticResource MenuSeparator}" />
                                 <MenuItem Header="Settings…" Click="Settings_Click" />
@@ -1029,6 +1080,71 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
+                </StackPanel>
+
+                <!-- MultiTracks Playback remote listener (optional — host set in Settings) -->
+                <StackPanel DataContext="{Binding DataContext.Playback, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Visibility="{Binding IsEnabled, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Margin" Value="2,20,0,2" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="Margin" Value="2,3,0,1" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="PLAYBACK" Style="{StaticResource SectionHeader}" />
+                        <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
+                                   Fill="{StaticResource HairlineBrush}" />
+                    </Grid>
+
+                    <TextBlock Text="{Binding SongText}" HorizontalAlignment="Center" Margin="0,6,0,0"
+                               Foreground="{StaticResource DimBrush}" FontSize="12.5"
+                               TextTrimming="CharacterEllipsis" MaxWidth="270">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SongText}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding PositionText}" HorizontalAlignment="Center"
+                               FontFamily="Consolas" FontWeight="Bold">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontSize" Value="22" />
+                                <Setter Property="Margin" Value="0,2,0,1" />
+                                <Setter Property="Foreground" Value="{StaticResource DimBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="FontSize" Value="18" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                        <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding State}" Value="stale">
+                                        <Setter Property="Foreground" Value="{StaticResource AmberBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding State}" Value="error">
+                                        <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding SubText}" HorizontalAlignment="Center"
+                               Foreground="{StaticResource FaintBrush}" FontSize="11"
+                               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="270" />
                 </StackPanel>
 
                 <!-- Live SPL(A) meter (optional — enabled in Settings) -->

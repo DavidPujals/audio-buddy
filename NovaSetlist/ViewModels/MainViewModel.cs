@@ -26,6 +26,7 @@ public partial class MainViewModel : ObservableObject
     public TimecodeViewModel Timecode { get; }
     public KeyDetectViewModel KeyDetect { get; }
     public SplViewModel Spl { get; }
+    public PlaybackViewModel Playback { get; }
 
     public ObservableCollection<SetItemViewModel> Items { get; } = new();
     public ObservableCollection<Song> SearchResults { get; } = new();
@@ -38,6 +39,16 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private string statusText = "Loading…";
+
+    /// <summary>Display name of the current setlist; "" = unnamed.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SetlistHeader))]
+    private string setlistName = "";
+
+    /// <summary>Header above the rows: "SETLIST" or "SETLIST · Sunday 12 Oct".</summary>
+    public string SetlistHeader => SetlistName.Length > 0 ? $"SETLIST · {SetlistName}" : "SETLIST";
+
+    partial void OnSetlistNameChanged(string value) => SaveCurrent();
 
     /// <summary>Sync-state for the status dot: "idle", "ok", "cached" or "error".</summary>
     [ObservableProperty]
@@ -67,6 +78,7 @@ public partial class MainViewModel : ObservableObject
         Timecode = new TimecodeViewModel(_config);
         KeyDetect = new KeyDetectViewModel(_config);
         Spl = new SplViewModel(_config);
+        Playback = new PlaybackViewModel(_config);
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _saveTimer.Tick += (_, _) =>
         {
@@ -117,14 +129,20 @@ public partial class MainViewModel : ObservableObject
 
     private void RestoreCurrentService()
     {
+        var saved = _storage.LoadCurrent();
+        if (saved is not null)
+            LoadSet(saved);
+    }
+
+    /// <summary>Populates the rows from a saved setlist (current.json, an opened file).</summary>
+    private void LoadSet(ServiceSet set)
+    {
         var dirty = new List<SetItemViewModel>();
         _loadingCurrent = true;
         try
         {
-            var saved = _storage.LoadCurrent();
-            if (saved is null)
-                return;
-            foreach (var dto in saved.Items)
+            SetlistName = set.Name;
+            foreach (var dto in set.Items)
             {
                 var item = new SetItemViewModel
                 {
@@ -132,6 +150,7 @@ public partial class MainViewModel : ObservableObject
                     SelectedKey = dto.SelectedKey,
                     Leader = dto.Leader,
                     Color = dto.Color,
+                    Note = dto.Note,
                     Length = dto.Length,
                     Bpm = dto.Bpm,
                     IsCompleted = dto.Completed,
@@ -158,6 +177,98 @@ public partial class MainViewModel : ObservableObject
         // BEFORE the startup sync, so the sync leaves them alone instead of reverting them.
         foreach (var item in dirty)
             QueueSheetWrite(item);
+    }
+
+    // ---------- setlist files ----------
+
+    /// <summary>Snapshot of the rows in the saved-file shape.</summary>
+    private ServiceSet BuildSet() => new()
+    {
+        Name = SetlistName,
+        Items = Items.Select(i => new SetItemDto
+        {
+            Name = i.Name,
+            SelectedKey = i.SelectedKey,
+            Leader = i.Leader,
+            Color = i.Color,
+            Note = i.Note,
+            Length = i.Length,
+            Bpm = i.Bpm,
+            Completed = i.IsCompleted,
+            Chromatic = i.IsChromatic,
+            HasKeyChange = i.HasKeyChange,
+            KeyChangeKey = i.KeyChangeKey,
+            KeyChangeAt = i.KeyChangeAt,
+            SheetDirty = i.SheetDirty,
+            SheetAddOnly = i.SheetAddOnly,
+        }).ToList(),
+    };
+
+    /// <summary>Writes the current setlist to the backups folder (no-op when empty). Returns the path.</summary>
+    public string? BackupCurrent()
+    {
+        if (Items.Count == 0)
+            return null;
+        var path = _storage.Backup(BuildSet());
+        StatusText = path is null
+            ? "Couldn't write a backup of the current setlist"
+            : $"Backed up '{(SetlistName.Length > 0 ? SetlistName : "setlist")}' to {System.IO.Path.GetFileName(path)}";
+        return path;
+    }
+
+    /// <summary>Empties the rows and starts a fresh (optionally named) setlist. Back up first.</summary>
+    public void ClearSetlist(string name)
+    {
+        Timecode.StopCountdown();
+        foreach (var item in Items)
+            item.PropertyChanged -= OnItemPropertyChanged;
+        Items.Clear();
+        SetlistName = name.Trim();
+    }
+
+    public bool ExportSetlist(string path)
+    {
+        var ok = _storage.SaveTo(path, BuildSet());
+        StatusText = ok ? $"Saved setlist to {System.IO.Path.GetFileName(path)}" : "Couldn't save the setlist file";
+        return ok;
+    }
+
+    /// <summary>Replaces the rows with a saved file's. Back up first. Returns false if unreadable.</summary>
+    public bool ImportSetlist(string path)
+    {
+        var set = _storage.LoadFrom(path);
+        if (set is null)
+        {
+            StatusText = $"Couldn't read {System.IO.Path.GetFileName(path)} — not a setlist file?";
+            return false;
+        }
+        if (set.Name.Length == 0)
+        {
+            var file = System.IO.Path.GetFileName(path);
+            set.Name = file.EndsWith(StorageService.SetlistExtension, StringComparison.OrdinalIgnoreCase)
+                ? file[..^StorageService.SetlistExtension.Length]
+                : System.IO.Path.GetFileNameWithoutExtension(path);
+        }
+        ClearSetlist("");
+        LoadSet(set);
+        SaveCurrent();
+        StatusText = $"Opened '{set.Name}' — {Items.Count} song{(Items.Count == 1 ? "" : "s")}";
+        return true;
+    }
+
+    /// <summary>Remembers that the song Playback is currently on is this row's song.</summary>
+    public void LinkToPlayback(SetItemViewModel item)
+    {
+        var id = Playback.CurrentSongId;
+        if (id < 0)
+        {
+            StatusText = Playback.IsEnabled
+                ? "Playback isn't reporting a song right now — select the song in Playback, then try again"
+                : "Set the Playback host in Settings first";
+            return;
+        }
+        Playback.Learn(id, item.Name.Trim());
+        StatusText = $"Linked '{item.Name.Trim()}' to Playback song {id}";
     }
 
     /// <summary>Adds a leader name to the dropdown if it's new (case-insensitive).</summary>
@@ -402,29 +513,14 @@ public partial class MainViewModel : ObservableObject
             item.KeyChangeActive ? Music.SongLength.ParseSeconds(item.KeyChangeAt) : 0);
     }
 
-    // ---------- service-level actions ----------
-
-    [RelayCommand]
-    private void NewService()
-    {
-        if (Items.Count > 0)
-        {
-            var answer = MessageBox.Show(
-                "Clear the current service order?", "New service",
-                MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (answer != MessageBoxResult.Yes)
-                return;
-        }
-        Timecode.StopCountdown();
-        foreach (var item in Items)
-            item.PropertyChanged -= OnItemPropertyChanged;
-        Items.Clear();
-    }
+    // ---------- setlist-level actions ----------
 
     [RelayCommand]
     private void CopyAsText()
     {
         var sb = new StringBuilder();
+        if (SetlistName.Length > 0)
+            sb.AppendLine(SetlistName);
         for (var i = 0; i < Items.Count; i++)
         {
             var item = Items[i];
@@ -445,6 +541,8 @@ public partial class MainViewModel : ObservableObject
             }
             if (!string.IsNullOrWhiteSpace(item.Leader))
                 sb.Append($" — Leader: {item.Leader.Trim()}");
+            if (!string.IsNullOrWhiteSpace(item.Note))
+                sb.Append($" — Note: {item.Note.Trim()}");
             sb.AppendLine();
         }
         try
@@ -692,26 +790,5 @@ public partial class MainViewModel : ObservableObject
         SaveCurrentNow();
     }
 
-    private void SaveCurrentNow()
-    {
-        _storage.SaveCurrent(new ServiceSet
-        {
-            Items = Items.Select(i => new SetItemDto
-            {
-                Name = i.Name,
-                SelectedKey = i.SelectedKey,
-                Leader = i.Leader,
-                Color = i.Color,
-                Length = i.Length,
-                Bpm = i.Bpm,
-                Completed = i.IsCompleted,
-                Chromatic = i.IsChromatic,
-                HasKeyChange = i.HasKeyChange,
-                KeyChangeKey = i.KeyChangeKey,
-                KeyChangeAt = i.KeyChangeAt,
-                SheetDirty = i.SheetDirty,
-                SheetAddOnly = i.SheetAddOnly,
-            }).ToList(),
-        });
-    }
+    private void SaveCurrentNow() => _storage.SaveCurrent(BuildSet());
 }

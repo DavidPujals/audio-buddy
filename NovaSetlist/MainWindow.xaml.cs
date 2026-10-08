@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using NovaSetlist.Models;
+using NovaSetlist.Services;
 using NovaSetlist.ViewModels;
 
 namespace NovaSetlist;
@@ -286,6 +287,91 @@ public partial class MainWindow : Window
             _vm.RemoveCommand.Execute(item);
     }
 
+    private void RowMenuLinkPlayback_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: SetItemViewModel item })
+            _vm.LinkToPlayback(item);
+    }
+
+    // ---------- setlist menu ----------
+
+    private static string SetlistFilter =>
+        $"Audio Buddy setlist (*{StorageService.SetlistExtension})|*{StorageService.SetlistExtension}|All files (*.*)|*.*";
+
+    private void NewSetlist_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm.Items.Count > 0)
+        {
+            var answer = MessageBox.Show(this,
+                "Start a new setlist? The current one is backed up first (Setlist menu → Open… → backups folder).",
+                "New setlist", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.Yes)
+                return;
+        }
+        var dialog = new NameDialog("New setlist", "NAME", "",
+            "Optional — e.g. Sunday 12 Oct AM. Shown above the songs and used for file names.", "Create")
+        { Owner = this };
+        if (dialog.ShowDialog() != true)
+            return;
+        _vm.BackupCurrent();
+        _vm.ClearSetlist(dialog.Value);
+    }
+
+    private void RenameSetlist_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new NameDialog("Rename setlist", "NAME", _vm.SetlistName, "", "Rename") { Owner = this };
+        if (dialog.ShowDialog() == true)
+            _vm.SetlistName = dialog.Value;
+    }
+
+    private void OpenSetlist_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Open setlist",
+            Filter = SetlistFilter,
+            CheckFileExists = true,
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        if (_vm.Items.Count > 0)
+        {
+            var answer = MessageBox.Show(this,
+                "Replace the current setlist with the file? The current one is backed up first.",
+                "Open setlist", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.Yes)
+                return;
+        }
+        _vm.BackupCurrent();
+        if (!_vm.ImportSetlist(dialog.FileName))
+            MessageBox.Show(this, "That file couldn't be read as a setlist.", "Open setlist",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private void SaveSetlistAs_Click(object sender, RoutedEventArgs e)
+    {
+        var suggested = _vm.SetlistName.Length > 0 ? _vm.SetlistName : $"Setlist {DateTime.Now:yyyy-MM-dd}";
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save setlist as",
+            Filter = SetlistFilter,
+            FileName = StorageService.SafeFileName(suggested) + StorageService.SetlistExtension,
+            DefaultExt = StorageService.SetlistExtension,
+            AddExtension = true,
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        if (_vm.SetlistName.Length == 0)
+        {
+            // An unnamed setlist takes the file's name so the header and the file agree.
+            var file = System.IO.Path.GetFileName(dialog.FileName);
+            _vm.SetlistName = file.EndsWith(StorageService.SetlistExtension, StringComparison.OrdinalIgnoreCase)
+                ? file[..^StorageService.SetlistExtension.Length]
+                : System.IO.Path.GetFileNameWithoutExtension(file);
+        }
+        _vm.ExportSetlist(dialog.FileName);
+    }
+
     // ---------- settings ----------
 
     private async void Settings_Click(object sender, RoutedEventArgs e)
@@ -300,6 +386,7 @@ public partial class MainWindow : Window
         _vm.Spl.RedFrom = dialog.SplRedLevel;
         _vm.Spl.SelectedDevice = dialog.SplDevice;
         _vm.Spl.IsEnabled = dialog.SplEnabled;
+        _vm.Playback.Apply(dialog.PlaybackHost);
         await _vm.ApplySheetSettingsAsync(dialog.SpreadsheetId, dialog.SongsTabName, dialog.LeadersTabName);
     }
 
@@ -308,6 +395,7 @@ public partial class MainWindow : Window
         SaveWindowPlacement();
         _vm.FlushPendingSave();
         _vm.Spl.FlushConfig();
+        _vm.Playback.Dispose();
         _vm.Timecode.Dispose();
         _vm.KeyDetect.Dispose();
         _vm.Spl.Dispose();

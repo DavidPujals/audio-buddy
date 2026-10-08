@@ -17,6 +17,9 @@ public sealed class AppConfig
     /// <summary>Installed-app OAuth "secret" (not confidential per Google); "" = use the built-in one.</summary>
     public string GoogleClientSecret { get; set; } = "";
 
+    /// <summary>Host name or IP of the PC running MultiTracks Playback (remote port 8080); "" = off.</summary>
+    public string PlaybackHost { get; set; } = "";
+
     /// <summary>waveIn product name of the LTC monitor input; "" = off.</summary>
     public string TimecodeDevice { get; set; } = "";
 
@@ -61,6 +64,7 @@ public sealed class AppConfig
                     cfg.TimecodeDevice = cfg.TimecodeDevice?.Trim() ?? "";
                     cfg.KeyDetectDevice = cfg.KeyDetectDevice?.Trim() ?? "";
                     cfg.SplDevice = cfg.SplDevice?.Trim() ?? "";
+                    cfg.PlaybackHost = cfg.PlaybackHost?.Trim() ?? "";
                     return cfg;
                 }
             }

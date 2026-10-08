@@ -123,6 +123,21 @@
         <TextBlock Text="The readout is green below the yellow level"
                    Foreground="{StaticResource FaintBrush}" FontSize="11" Margin="2,4,0,0" />
 
+        <Grid Margin="1,20,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="MULTITRACKS PLAYBACK" Style="{StaticResource SectionHeader}" />
+            <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
+                       Fill="{StaticResource HairlineBrush}" />
+        </Grid>
+
+        <TextBlock Text="HOST" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,8,0,5" />
+        <TextBox x:Name="PlaybackHostBox" MinHeight="30" FontFamily="Consolas" />
+        <TextBlock Text="Name or IP of the PC running Playback, with Allow Remote Connections turned on there (port 8080). Leave blank to turn the listener off."
+                   Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
+
         <Grid Margin="0,20,0,0">
             <Button Content="About" MinWidth="76" HorizontalAlignment="Left" Click="About_Click" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

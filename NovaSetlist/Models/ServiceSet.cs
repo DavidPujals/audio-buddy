@@ -35,10 +35,17 @@ public sealed class SetItemDto
 
     /// <summary>The pending write is a plain manual add (append if missing), not a key-detail edit.</summary>
     public bool SheetAddOnly { get; set; }
+
+    /// <summary>Free-text note for this setlist only ("Sarah on harmonies"); "" = none.</summary>
+    public string Note { get; set; } = "";
 }
 
+/// <summary>A setlist: the current one lives in current.json; the same shape is used for
+/// exported .setlist.json files and automatic backups.</summary>
 public sealed class ServiceSet
 {
+    /// <summary>Display name, e.g. "Sunday 12 Oct — AM"; "" = unnamed.</summary>
+    public string Name { get; set; } = "";
     public List<SetItemDto> Items { get; set; } = new();
     public DateTime? ServiceDate { get; set; }
 }

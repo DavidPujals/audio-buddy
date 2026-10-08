@@ -21,6 +21,7 @@ public partial class SettingsDialog : Window
     public bool SplFast => SplResponseBox.SelectedIndex == 1;
     public double SplYellowLevel => ParseLevel(SplYellowBox.Text, _vm.Spl.YellowFrom);
     public double SplRedLevel => ParseLevel(SplRedBox.Text, _vm.Spl.RedFrom);
+    public string PlaybackHost => PlaybackHostBox.Text.Trim();
 
     public SettingsDialog(MainViewModel vm)
     {
@@ -51,6 +52,7 @@ public partial class SettingsDialog : Window
         // while this dialog is open; Cancel puts the original value back.
         _originalOffset = vm.Spl.Offset;
         SplOffsetBox.Text = vm.Spl.Offset.ToString("0.#", CultureInfo.CurrentCulture);
+        PlaybackHostBox.Text = vm.Playback.Host;
 
         UpdateGoogleUi();
     }

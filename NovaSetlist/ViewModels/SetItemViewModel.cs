@@ -22,6 +22,10 @@ public partial class SetItemViewModel : ObservableObject
     [ObservableProperty]
     private string color = "";
 
+    /// <summary>Free-text note for this setlist only, e.g. who's on harmonies; "" = none.</summary>
+    [ObservableProperty]
+    private string note = "";
+
     /// <summary>Song length from the sheet ("3:45"); "" = unknown.</summary>
     [ObservableProperty]
     private string length = "";

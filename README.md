@@ -59,8 +59,8 @@ Double-click `Audio Buddy.exe` (with `appsettings.json` next to it). On launch i
 - **Small windows** — the layout adapts: below ~760 px wide the rows go compact (name + key, actions via right-click); below ~450 px tall the top bar folds into a ☰ menu.
 - **▶** — marks a song as now playing. When timecode is locked, the countdown is **synced to the timeline**: remaining = song Length − the timecode position (mm:ss:ff; the hour is ignored, so hour-per-song layouts work). Without timecode it counts on the wall clock from the second ▶ click, and timecode takes over whenever it arrives. The number turns amber at 30 s left and red at 10 s or in overtime. Click again to stop.
 - The window reopens at the size and position you left it (per machine, stored in `%APPDATA%\NovaSetlist\window.json`).
-- **Copy as text** — puts a clean plain-text order on the clipboard, e.g. `1. Song Name — Key G — Leader: Sarah`.
-- **New service** — clears the list (asks first).
+- **Notes** — the editor has a NOTE box for anything worth remembering about this song in this setlist ("Sarah on harmonies"); it shows under the song name and goes into *Copy as text*. Notes belong to the setlist, not the sheet.
+- **Setlist ▾ menu** — *New setlist…* (names it, and **backs the current one up first** to `%APPDATA%\NovaSetlist\backups`, newest 50 kept), *Rename…*, *Open…* / *Save as…* (`.setlist.json` files — prep a setlist at home, open it on the Sunday PC), and *Copy as text* (`Setlist name` then `1. Song Name — Key G — Leader: Sarah — Note: …`). The name shows above the songs.
 - **Settings** — set the spreadsheet ID / tab names from inside the app.
 - **Settings → About** — software details, version number, and a **Check for updates** button.
 
@@ -71,6 +71,12 @@ The panel on the right decodes **SMPTE LTC** from any WDM audio input and shows 
 ### Live key detection
 
 Give it a second WDM input carrying the band / music feed (Settings → Audio inputs → Key detection) and the panel shows the key being played, updated as the music moves. It listens to a few seconds of harmonic context, so give it a moment after a key change; it shows "listening…" instead of guessing when it isn't confident. A feed with bass in it works best — the bass carries the tonality.
+
+### MultiTracks Playback
+
+Put the Playback PC's name or IP in **Settings → MultiTracks Playback → Host** (Playback itself needs *Allow Remote Connections* on — the setting doesn't always survive a Playback relaunch). The PLAYBACK section then shows what Playback is on and its playhead, green while playing, amber when the heartbeat goes stale (5 s) and red when the PC can't be reached. The app only listens on Playback's remote-control channel (the one the Playback Remote iPad app uses, port 8080) and never sends anything.
+
+Playback reports songs as numbers, not names. To teach the app a name: select the song in Playback, then right-click its row here and choose **Link to the song playing in Playback**. Links are remembered per machine (`%APPDATA%\NovaSetlist\playback-map.json`), so one rehearsal covers a setlist. Until linked, the panel shows `Song 91000003 — not linked yet`.
 
 ### SPL meter
 
