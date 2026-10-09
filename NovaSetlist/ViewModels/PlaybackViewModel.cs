@@ -109,8 +109,35 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         _timer.Start();
     }
 
+    private DateTime _mapStamp;
+    private long _mapCheckTick;
+
+    /// <summary>The map file can be refreshed from outside (a MultiTracks export); pick that up
+    /// without a restart. Checked every few seconds — a stat call, nothing more.</summary>
+    private void ReloadMapIfChanged()
+    {
+        var now = Environment.TickCount64;
+        if (now - _mapCheckTick < 3000)
+            return;
+        _mapCheckTick = now;
+        try
+        {
+            var stamp = File.Exists(MapPath) ? File.GetLastWriteTimeUtc(MapPath) : DateTime.MinValue;
+            if (stamp == _mapStamp)
+                return;
+            _mapStamp = stamp;
+            _titles.Clear();
+            LoadMap();
+        }
+        catch
+        {
+            // transient file access issue — try again on the next check
+        }
+    }
+
     private void Poll()
     {
+        ReloadMapIfChanged();
         var c = _client;
         if (c is null)
             return;
@@ -268,6 +295,7 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
             var tmp = MapPath + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(map, new JsonSerializerOptions { WriteIndented = true }));
             File.Move(tmp, MapPath, overwrite: true);
+            _mapStamp = File.GetLastWriteTimeUtc(MapPath); // our own write — no reload needed
         }
         catch
         {
