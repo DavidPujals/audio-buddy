@@ -1145,7 +1145,20 @@
                     <TextBlock Text="{Binding SubText}" HorizontalAlignment="Center"
                                Foreground="{StaticResource FaintBrush}" FontSize="11"
                                TextWrapping="Wrap" TextAlignment="Center" MaxWidth="270" />
-                    <Button Content="Match songs by order…" HorizontalAlignment="Center" Margin="0,6,0,0"
+                    <Button Content="Refresh names from MultiTracks" HorizontalAlignment="Center" Margin="0,6,0,0"
+                            Padding="10,3" FontSize="11" Click="RefreshPlaybackNames_Click"
+                            ToolTip="Pulls every recent setlist from the MultiTracks account and names Playback's songs from it">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="Match songs by order…" HorizontalAlignment="Center" Margin="0,4,0,0"
                             Padding="10,3" FontSize="11" Click="MatchPlayback_Click"
                             ToolTip="Steps Playback through its setlist (while stopped) and names each song from the row in the same position here">
                         <Button.Style>

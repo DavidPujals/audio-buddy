@@ -147,6 +147,30 @@
                    Text="Click Find Playback to scan the network, or type the Playback computer's name or IP. Playback needs Allow Remote Connections on (port 8080). Leave blank to turn the listener off."
                    Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
 
+        <Grid Margin="1,20,0,2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="MULTITRACKS ACCOUNT" Style="{StaticResource SectionHeader}" />
+            <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
+                       Fill="{StaticResource HairlineBrush}" />
+        </Grid>
+        <TextBlock Text="Names Playback's songs straight from your MultiTracks setlists (Live Bundle / MultiTracks One). Needs an OAuth client ID issued by MultiTracks for this app — ask support@multitracks.com."
+                   Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,8" />
+        <TextBlock Text="CLIENT ID" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
+        <TextBox x:Name="MultiTracksClientIdBox" MinHeight="30" FontFamily="Consolas" TextChanged="MultiTracksClientId_TextChanged" />
+        <Grid Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="MultiTracksStatusText" Grid.Column="0" VerticalAlignment="Center"
+                       Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="1,0,10,0" />
+            <Button x:Name="MultiTracksAuthButton" Grid.Column="1" MinWidth="140" Padding="10,5"
+                    VerticalAlignment="Center" Click="MultiTracksAuth_Click" />
+        </Grid>
+
         <Grid Margin="0,20,0,0">
             <Button Content="About" MinWidth="76" HorizontalAlignment="Left" Click="About_Click" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

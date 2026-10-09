@@ -293,6 +293,11 @@ public partial class MainWindow : Window
             _vm.LinkToPlayback(item);
     }
 
+    private async void RefreshPlaybackNames_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.RefreshPlaybackNamesAsync();
+    }
+
     private bool _matching;
 
     private async void MatchPlayback_Click(object sender, RoutedEventArgs e)
@@ -405,6 +410,7 @@ public partial class MainWindow : Window
         _vm.Spl.SelectedDevice = dialog.SplDevice;
         _vm.Spl.IsEnabled = dialog.SplEnabled;
         _vm.Playback.Apply(dialog.PlaybackHost);
+        _vm.Config.MultiTracksClientId = dialog.MultiTracksClientId;
         await _vm.ApplySheetSettingsAsync(dialog.SpreadsheetId, dialog.SongsTabName, dialog.LeadersTabName);
     }
 

@@ -27,6 +27,7 @@ public partial class MainViewModel : ObservableObject
     public KeyDetectViewModel KeyDetect { get; }
     public SplViewModel Spl { get; }
     public PlaybackViewModel Playback { get; }
+    public MultiTracksService MultiTracks { get; }
 
     public ObservableCollection<SetItemViewModel> Items { get; } = new();
     public ObservableCollection<Song> SearchResults { get; } = new();
@@ -79,6 +80,7 @@ public partial class MainViewModel : ObservableObject
         KeyDetect = new KeyDetectViewModel(_config);
         Spl = new SplViewModel(_config);
         Playback = new PlaybackViewModel(_config);
+        MultiTracks = new MultiTracksService(_config);
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _saveTimer.Tick += (_, _) =>
         {
@@ -260,6 +262,45 @@ public partial class MainViewModel : ObservableObject
     /// Names every Playback song in one go by assuming Playback's setlist is in the same
     /// order as this one: walks Playback's setlist, then links song N to row N.
     /// </summary>
+    private bool _refreshingNames;
+
+    /// <summary>Pulls every recent/upcoming setlist from the MultiTracks account and names
+    /// Playback's songs from it — no walking, no linking.</summary>
+    public async Task RefreshPlaybackNamesAsync()
+    {
+        if (_refreshingNames)
+            return;
+        if (!MultiTracks.IsConfigured)
+        {
+            StatusText = "Enter the MultiTracks client ID in Settings → MultiTracks account first";
+            return;
+        }
+        if (!MultiTracks.IsSignedIn)
+        {
+            StatusText = "Sign in to MultiTracks in Settings first";
+            return;
+        }
+        _refreshingNames = true;
+        try
+        {
+            var progress = new Progress<string>(s => StatusText = "MultiTracks — " + s);
+            var result = await MultiTracks.FetchNamesAsync(progress, CancellationToken.None);
+            var changed = Playback.MergeTitles(result.Titles);
+            var songs = result.Setlists.Sum(s => s.Songs.Count);
+            StatusText = $"Playback names refreshed — {songs} songs across {result.Setlists.Count} setlists" +
+                         (changed > 0 ? $", {changed} new or changed" : ", nothing new") +
+                         (result.Unresolved > 0 ? $"; {result.Unresolved} couldn't be named" : "");
+        }
+        catch (Exception ex)
+        {
+            StatusText = "MultiTracks refresh failed — " + (ex is InvalidOperationException ? ex.Message : "no internet?");
+        }
+        finally
+        {
+            _refreshingNames = false;
+        }
+    }
+
     public async Task MatchPlaybackByOrderAsync()
     {
         if (Items.Count == 0)

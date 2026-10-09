@@ -265,6 +265,27 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
 
     public string? TitleFor(long id) => _titles.TryGetValue(id, out var t) ? t : null;
 
+    /// <summary>Takes a batch of names (a MultiTracks refresh) into the map in one save.</summary>
+    public int MergeTitles(IReadOnlyDictionary<long, string> titles)
+    {
+        var changed = 0;
+        foreach (var (id, title) in titles)
+        {
+            var t = title.Trim();
+            if (id < 0 || t.Length == 0)
+                continue;
+            if (!_titles.TryGetValue(id, out var have) || have != t)
+            {
+                _titles[id] = t;
+                changed++;
+            }
+        }
+        if (changed > 0)
+            SaveMap();
+        Poll();
+        return changed;
+    }
+
     private void LoadMap()
     {
         try
