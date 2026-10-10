@@ -80,6 +80,7 @@ public partial class MainViewModel : ObservableObject
         KeyDetect = new KeyDetectViewModel(_config);
         Spl = new SplViewModel(_config);
         Playback = new PlaybackViewModel(_config);
+        Playback.Updated += FollowPlayback;
         MultiTracks = new MultiTracksService(_config);
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _saveTimer.Tick += (_, _) =>
@@ -330,6 +331,72 @@ public partial class MainViewModel : ObservableObject
             : $"Playback has {ids.Count} songs, this setlist has {Items.Count} — matched the first {n} by order; right-click a row → Link to fix any";
     }
 
+    // ---------- now playing follows Playback ----------
+
+    private long _followedSongId = -1;
+
+    /// <summary>True while Playback is connected and on a song — Now Playing is its mirror.</summary>
+    public bool PlaybackDrives => _followedSongId >= 0;
+
+    /// <summary>
+    /// Runs after every Playback poll. While Playback is connected and on a song, that song is
+    /// Now Playing: its name from the map, the length from Playback's own duration for the
+    /// setlist entry (else the matching row / sheet length), key details from the matching row,
+    /// and the countdown off Playback's playhead. When Playback goes away the panel clears.
+    /// </summary>
+    private void FollowPlayback()
+    {
+        var id = Playback.CurrentSongId;
+        if (id < 0)
+        {
+            if (_followedSongId >= 0)
+            {
+                _followedSongId = -1;
+                Timecode.ReleaseExternal();
+                foreach (var it in Items)
+                    it.IsPlaying = false;
+            }
+            return;
+        }
+
+        if (id != _followedSongId || !Timecode.IsExternal)
+        {
+            _followedSongId = id;
+            var reference = Playback.ReferenceFor(id);
+            var title = Playback.TitleFor(id) ?? $"Song {id}";
+            var row = FindRowByName(title);
+            var master = row is null
+                ? _allSongs.FirstOrDefault(s => string.Equals(s.Name.Trim(), title, StringComparison.OrdinalIgnoreCase))
+                : null;
+
+            var length = reference is { Duration: > 0 } ? reference.Duration
+                       : Music.SongLength.ParseSeconds(row?.Length ?? master?.Length);
+            var bpm = First(row?.Bpm, master?.Bpm, reference is { Bpm: > 0 } ? reference.Bpm.ToString("0.#") : "");
+            var fromKey = First(row?.SelectedKey, master?.DefaultKey, reference?.Key);
+            var chromatic = row?.IsChromatic ?? master?.Chromatic ?? false;
+            var keyChangeKey = row is not null ? (row.KeyChangeActive ? row.KeyChangeKey.Trim() : "") : master?.KeyChangeKey ?? "";
+            var keyChangeAt = row is not null ? (row.KeyChangeActive ? row.KeyChangeAt : "") : master?.KeyChangeAt ?? "";
+
+            foreach (var it in Items)
+                it.IsPlaying = it == row;
+            Timecode.CueExternal(title, length, bpm, chromatic, fromKey, keyChangeKey,
+                keyChangeKey.Length > 0 ? Music.SongLength.ParseSeconds(keyChangeAt) : 0);
+        }
+        Timecode.UpdateExternal(Playback.PositionSeconds, Playback.IsPlaying);
+    }
+
+    private static string First(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? "";
+
+    /// <summary>The row for a song name: the one already playing, else the first not yet completed, else any.</summary>
+    private SetItemViewModel? FindRowByName(string name)
+    {
+        var matches = Items.Where(i => string.Equals(i.Name.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        return matches.FirstOrDefault(i => i.IsPlaying)
+            ?? matches.FirstOrDefault(i => !i.IsCompleted)
+            ?? matches.FirstOrDefault();
+    }
+
     /// <summary>Remembers that the song Playback is currently on is this row's song.</summary>
     public void LinkToPlayback(SetItemViewModel item)
     {
@@ -343,6 +410,7 @@ public partial class MainViewModel : ObservableObject
         }
         Playback.Learn(id, item.Name.Trim());
         StatusText = $"Linked '{item.Name.Trim()}' to Playback song {id}";
+        _followedSongId = -1; // re-cue Now Playing under the new name on the next poll
     }
 
     /// <summary>Adds a leader name to the dropdown if it's new (case-insensitive).</summary>
@@ -567,6 +635,11 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void Play(SetItemViewModel item)
     {
+        if (PlaybackDrives)
+        {
+            StatusText = "Now Playing is following Playback — it shows whatever Playback is on while Playback is connected";
+            return;
+        }
         if (item.IsPlaying)
         {
             if (Timecode.PlayState == "cued")

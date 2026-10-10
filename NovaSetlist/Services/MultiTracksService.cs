@@ -260,7 +260,10 @@ public sealed class MultiTracksService
         var (result, _) = await PostRpcAsync(req, id, cancel);
 
         if (result.TryGetProperty("isError", out var isErr) && isErr.ValueKind == JsonValueKind.True)
-            throw new InvalidOperationException($"MultiTracks tool {tool} failed: {FirstText(result)}");
+        {
+            var msg = FirstText(result);
+            throw new MultiTracksToolException(ExtractCode(msg), $"MultiTracks tool {tool} failed: {msg}");
+        }
         var text = FirstText(result);
         try
         {
@@ -330,9 +333,20 @@ public sealed class MultiTracksService
             using var doc = JsonDocument.Parse(payload);
             var root = doc.RootElement;
             if (root.TryGetProperty("error", out var err))
-                throw new InvalidOperationException($"MultiTracks MCP error: {(err.TryGetProperty("message", out var m) ? m.GetString() : err.GetRawText())}");
+            {
+                var msg = err.TryGetProperty("message", out var m) ? m.GetString() ?? "" : err.GetRawText();
+                var code = err.TryGetProperty("code", out var c) && c.TryGetInt32(out var n) ? n : ExtractCode(msg);
+                throw new MultiTracksToolException(code, $"MultiTracks MCP error: {msg}");
+            }
             return (root.TryGetProperty("result", out var res) ? res.Clone() : default, session);
         }
+    }
+
+    /// <summary>Tool errors come back as text ("... -32009 ..."); pull the JSON-RPC code out if present.</summary>
+    private static int ExtractCode(string message)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(message, @"-32\d{3}");
+        return m.Success && int.TryParse(m.Value, out var code) ? code : 0;
     }
 
     /// <summary>Picks the JSON-RPC response with the given id out of a text/event-stream body.</summary>
@@ -361,7 +375,7 @@ public sealed class MultiTracksService
 
     // ---------- the names fetch ----------
 
-    public sealed record SetlistSong(int Order, long SetlistSongId, string Title, string Key, double Bpm, int ContentType, long ContentId);
+    public sealed record SetlistSong(int Order, long SetlistSongId, string Title, string Key, double Bpm, int ContentType, long ContentId, double Duration = 0);
     public sealed record Setlist(long SetlistId, string Name, int Version, string Date, List<SetlistSong> Songs);
     public sealed record NamesResult(Dictionary<long, string> Titles, List<Setlist> Setlists, int Unresolved);
 
@@ -451,6 +465,28 @@ public sealed class MultiTracksService
                 break;
         }
 
+        // Playback's real play length per setlist entry (trims included) — one call per song,
+        // so only for setlists around now. These drive the Now Playing countdown.
+        var durations = new Dictionary<long, double>();
+        var near = setlists.Where(sl => DateTime.TryParse(sl.Date, out var d) && d >= today.AddDays(-DurationDaysBack) && d <= today.AddDays(DurationDaysAhead))
+                           .SelectMany(sl => sl.Songs.Select(s => (sl.SetlistId, s.SetlistSongId)))
+                           .Take(MaxDurationCalls).ToList();
+        for (var i = 0; i < near.Count; i++)
+        {
+            progress?.Report($"reading song lengths {i + 1} of {near.Count}…");
+            try
+            {
+                using var doc = await CallToolAsync("setlistSongDurationGet", new { setlistID = near[i].SetlistId, setlistSongID = near[i].SetlistSongId }, cancel);
+                var secs = Dbl(doc.RootElement, "durationSeconds");
+                if (secs > 0)
+                    durations[near[i].SetlistSongId] = secs;
+            }
+            catch (InvalidOperationException)
+            {
+                // unknown length for this one — the sheet's Length column covers it
+            }
+        }
+
         var titles = new Dictionary<long, string>();
         var unresolved = 0;
         var resolved = new List<Setlist>();
@@ -471,7 +507,7 @@ public sealed class MultiTracksService
                 {
                     titles[s.SetlistSongId] = title.Trim();
                 }
-                songs.Add(s with { Title = title });
+                songs.Add(s with { Title = title, Duration = durations.TryGetValue(s.SetlistSongId, out var dur) ? dur : 0 });
             }
             resolved.Add(sl with { Songs = songs });
         }
@@ -485,7 +521,7 @@ public sealed class MultiTracksService
                 setlists = resolved.Select(sl => new
                 {
                     setlistID = sl.SetlistId, name = sl.Name, version = sl.Version, date = sl.Date,
-                    songs = sl.Songs.Select(s => new { order = s.Order, setlistSongID = s.SetlistSongId, title = s.Title, key = s.Key, bpm = s.Bpm, contentType = s.ContentType, contentID = s.ContentId }),
+                    songs = sl.Songs.Select(s => new { order = s.Order, setlistSongID = s.SetlistSongId, title = s.Title, key = s.Key, bpm = s.Bpm, durationSeconds = s.Duration, contentType = s.ContentType, contentID = s.ContentId }),
                 }),
             };
             Directory.CreateDirectory(Path.GetDirectoryName(ReferencePath)!);
@@ -496,6 +532,52 @@ public sealed class MultiTracksService
             // the reference file is a convenience; the map is what matters
         }
         return new NamesResult(titles, resolved, unresolved);
+    }
+
+    private const int DurationDaysBack = 7, DurationDaysAhead = 21, MaxDurationCalls = 80;
+
+    // ---------- SMPTE settings on a setlist (writes) ----------
+
+    /// <summary>Current version of a setlist — every write needs it and bumps it.</summary>
+    public async Task<int> GetSetlistVersionAsync(long setlistId, CancellationToken cancel)
+    {
+        using var doc = await CallToolAsync("setlistGet", new { setlistIDOrName = setlistId.ToString() }, cancel);
+        var v = Int(doc.RootElement, "version");
+        if (v <= 0)
+            throw new InvalidOperationException($"MultiTracks didn't return a version for setlist {setlistId}.");
+        return v;
+    }
+
+    /// <summary>Sets a setlist song's own SMPTE settings: output on/off, start position in
+    /// seconds and timeline offset in samples (−1 leaves either unchanged). Returns the new
+    /// setlist version. Throws <see cref="MultiTracksToolException"/> (code −32009) if the
+    /// setlist moved on since <paramref name="expectedVersion"/> — re-read and retry.</summary>
+    public Task<int> SetSmpteAsync(long setlistId, long setlistSongId, int expectedVersion,
+        bool enabled, double startTime, long timelineLocation, CancellationToken cancel) =>
+        WriteAsync("setlistSongSetSMPTE", new
+        {
+            setlistID = setlistId, setlistSongID = setlistSongId, expectedVersion,
+            enabled, startTime, timelineLocation,
+        }, setlistId, expectedVersion, cancel);
+
+    /// <summary>True = the song's SMPTE settings come from its default arrangement (per-setlist
+    /// overrides are bypassed); false = this setlist entry's own values apply.</summary>
+    public Task<int> SetSmpteFollowsDefaultAsync(long setlistId, long setlistSongId, int expectedVersion,
+        bool follows, CancellationToken cancel) =>
+        WriteAsync("setlistSongSetSMPTEFollowsDefault", new
+        {
+            setlistID = setlistId, setlistSongID = setlistSongId, expectedVersion, follows,
+        }, setlistId, expectedVersion, cancel);
+
+    private async Task<int> WriteAsync(string tool, object args, long setlistId, int expectedVersion, CancellationToken cancel)
+    {
+        using var doc = await CallToolAsync(tool, args, cancel);
+        var root = doc.RootElement;
+        // The reply normally carries the new version; if not, read it back.
+        var v = root.ValueKind == JsonValueKind.Object ? Int(root, "version") : 0;
+        if (v <= 0 && root.ValueKind == JsonValueKind.Object && root.TryGetProperty("setlist", out var sl))
+            v = Int(sl, "version");
+        return v > expectedVersion ? v : await GetSetlistVersionAsync(setlistId, cancel);
     }
 
     private static IEnumerable<JsonElement> Items(JsonElement root)
@@ -554,6 +636,15 @@ public sealed class MultiTracksService
 
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+}
+
+/// <summary>An MCP tool or JSON-RPC error, with the server's code when it gave one
+/// (−32009 = the setlist changed since it was read; −32002 = not yours / not found).</summary>
+public sealed class MultiTracksToolException : InvalidOperationException
+{
+    public int Code { get; }
+    public MultiTracksToolException(int code, string message) : base(message) => Code = code;
+    public bool IsVersionConflict => Code == -32009 || Message.Contains("modified since", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Loopback-redirect helper shared by the OAuth sign-ins: accepts connections on a

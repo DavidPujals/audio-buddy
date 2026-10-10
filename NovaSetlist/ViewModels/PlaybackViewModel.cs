@@ -18,11 +18,32 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
 
     private static string MapPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NovaSetlist", "playback-map.json");
+    private static string ReferencePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NovaSetlist", "multitracks-setlists.json");
+
+    /// <summary>One song of a MultiTracks setlist as the reference file records it. Duration is
+    /// Playback's own play length for this setlist entry (0 = unknown).</summary>
+    public sealed record RefSong(long SetlistSongId, long SetlistId, int Order, string Title, string Key, double Bpm, double Duration);
+    public sealed record RefSetlist(long Id, string Name, string Date, int Version, List<RefSong> Songs)
+    {
+        public string Label => Date.Length > 0 ? $"{Name}  ·  {Date}" : Name;
+        public override string ToString() => Label; // the ComboBox's selection box shows this
+    }
 
     private readonly AppConfig _config;
     private readonly DispatcherTimer _timer;
     private readonly Dictionary<long, string> _titles = new();
+    private readonly Dictionary<long, RefSong> _refSongs = new();
     private PlaybackClient? _client;
+
+    /// <summary>MultiTracks setlists from the reference file, newest date first.</summary>
+    public List<RefSetlist> ReferenceSetlists { get; private set; } = new();
+
+    /// <summary>Raised on the UI thread after every poll — the main view model follows Playback from it.</summary>
+    public event Action? Updated;
+
+    /// <summary>Playhead position in seconds, interpolated between heartbeats while playing.</summary>
+    public double PositionSeconds { get; private set; }
 
     /// <summary>A host is configured — the PLAYBACK section shows.</summary>
     [ObservableProperty]
@@ -44,6 +65,10 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool isPlaying;
 
+    /// <summary>The key MultiTracks has the current song in (from the setlist); "" = unknown or no song.</summary>
+    [ObservableProperty]
+    private string songKey = "";
+
     public string Host { get; private set; }
 
     public PlaybackViewModel(AppConfig config)
@@ -51,6 +76,7 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         _config = config;
         Host = config.PlaybackHost;
         LoadMap();
+        LoadReference();
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _timer.Tick += (_, _) => Poll();
         Restart();
@@ -90,7 +116,9 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
             IsEnabled = false;
             State = "off";
             SongText = "";
+            SongKey = "";
             PositionText = "—";
+            PositionSeconds = 0;
             SubText = "";
             IsPlaying = false;
             _timer.Stop();
@@ -109,12 +137,12 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         _timer.Start();
     }
 
-    private DateTime _mapStamp;
+    private DateTime _mapStamp, _refStamp;
     private long _mapCheckTick;
 
-    /// <summary>The map file can be refreshed from outside (a MultiTracks export); pick that up
-    /// without a restart. Checked every few seconds — a stat call, nothing more.</summary>
-    private void ReloadMapIfChanged()
+    /// <summary>The map and reference files can be refreshed from outside (a MultiTracks export);
+    /// pick that up without a restart. Checked every few seconds — two stat calls, nothing more.</summary>
+    private void ReloadFilesIfChanged()
     {
         var now = Environment.TickCount64;
         if (now - _mapCheckTick < 3000)
@@ -123,11 +151,18 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         try
         {
             var stamp = File.Exists(MapPath) ? File.GetLastWriteTimeUtc(MapPath) : DateTime.MinValue;
-            if (stamp == _mapStamp)
-                return;
-            _mapStamp = stamp;
-            _titles.Clear();
-            LoadMap();
+            if (stamp != _mapStamp)
+            {
+                _mapStamp = stamp;
+                _titles.Clear();
+                LoadMap();
+            }
+            var refStamp = File.Exists(ReferencePath) ? File.GetLastWriteTimeUtc(ReferencePath) : DateTime.MinValue;
+            if (refStamp != _refStamp)
+            {
+                _refStamp = refStamp;
+                LoadReference();
+            }
         }
         catch
         {
@@ -137,7 +172,13 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
 
     private void Poll()
     {
-        ReloadMapIfChanged();
+        PollCore();
+        Updated?.Invoke();
+    }
+
+    private void PollCore()
+    {
+        ReloadFilesIfChanged();
         var c = _client;
         if (c is null)
             return;
@@ -146,7 +187,9 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         {
             State = c.Error.Length > 0 ? "error" : "connecting";
             SongText = "";
+            SongKey = "";
             PositionText = "—";
+            PositionSeconds = 0;
             SubText = c.Error.Length > 0 ? c.Error : $"connecting to {Host}…";
             IsPlaying = false;
             return;
@@ -165,19 +208,22 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         State = stale ? "stale" : "connected";
 
         var id = c.SongId;
-        SongText = id < 0 ? "no song loaded"
-                 : _titles.TryGetValue(id, out var title) ? title
-                 : $"Song {id} — not linked yet";
+        SongText = id < 0 ? "no song loaded" : TitleFor(id) ?? $"Song {id} — not linked yet";
+        SongKey = id >= 0 && !stale && _refSongs.TryGetValue(id, out var r) ? r.Key : "";
 
         // Heartbeats are 1 s apart: while playing, run the playhead on between them.
         var playing = c.Playing && !stale;
         var pos = c.PositionSeconds + (playing ? Math.Min(age, 1500) / 1000.0 : 0);
+        PositionSeconds = pos;
         PositionText = SongLength.Format(pos);
         IsPlaying = playing;
         SubText = stale ? $"no heartbeat for {age / 1000} s"
                 : (c.Playing ? "playing" : "stopped") +
                   (c.SetlistName.Length > 0 ? $" · {c.SetlistName}" : "");
     }
+
+    /// <summary>What the reference file knows about a Playback song (key, duration, setlist), or null.</summary>
+    public RefSong? ReferenceFor(long id) => _refSongs.TryGetValue(id, out var r) ? r : null;
 
     // ---------- match by order (setlist walk) ----------
 
@@ -263,7 +309,11 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
             Poll();
     }
 
-    public string? TitleFor(long id) => _titles.TryGetValue(id, out var t) ? t : null;
+    /// <summary>Name for a Playback song: a learned link first, else the reference file's title.</summary>
+    public string? TitleFor(long id) =>
+        _titles.TryGetValue(id, out var t) ? t
+        : _refSongs.TryGetValue(id, out var r) && r.Title.Length > 0 ? r.Title
+        : null;
 
     /// <summary>Takes a batch of names (a MultiTracks refresh) into the map in one save.</summary>
     public int MergeTitles(IReadOnlyDictionary<long, string> titles)
@@ -282,9 +332,59 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         }
         if (changed > 0)
             SaveMap();
+        LoadReference(); // the refresh rewrote the reference file too
+        try { _refStamp = File.Exists(ReferencePath) ? File.GetLastWriteTimeUtc(ReferencePath) : DateTime.MinValue; } catch { }
         Poll();
         return changed;
     }
+
+    /// <summary>Reads multitracks-setlists.json (written by the MultiTracks refresh, or by hand):
+    /// per-song keys and Playback durations, plus the setlists for the timecode dialog.</summary>
+    private void LoadReference()
+    {
+        _refSongs.Clear();
+        var lists = new List<RefSetlist>();
+        try
+        {
+            if (File.Exists(ReferencePath))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(ReferencePath));
+                if (doc.RootElement.TryGetProperty("setlists", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var sl in arr.EnumerateArray())
+                    {
+                        var id = Long(sl, "setlistID");
+                        var songs = new List<RefSong>();
+                        if (sl.TryGetProperty("songs", out var sa) && sa.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var s in sa.EnumerateArray())
+                            {
+                                var song = new RefSong(Long(s, "setlistSongID"), id, (int)Long(s, "order"),
+                                    Str(s, "title"), Str(s, "key"), Dbl(s, "bpm"), Dbl(s, "durationSeconds"));
+                                songs.Add(song);
+                                if (song.SetlistSongId > 0)
+                                    _refSongs[song.SetlistSongId] = song;
+                            }
+                        }
+                        lists.Add(new RefSetlist(id, Str(sl, "name"), Str(sl, "date"), (int)Long(sl, "version"),
+                            songs.OrderBy(x => x.Order).ToList()));
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Unreadable reference — keep whatever parsed; the map still names songs.
+        }
+        ReferenceSetlists = lists.OrderByDescending(l => l.Date, StringComparer.Ordinal).ThenBy(l => l.Name).ToList();
+    }
+
+    private static long Long(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? n : 0;
+    private static double Dbl(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.TryGetDouble(out var n) ? n : 0;
+    private static string Str(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 
     private void LoadMap()
     {

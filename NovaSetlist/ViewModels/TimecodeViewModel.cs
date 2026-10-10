@@ -101,6 +101,17 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     private bool _chromatic;
     private bool _shownKeyChanged;
 
+    // External (MultiTracks Playback) drive: while Playback is connected and on a song, its
+    // playhead IS the elapsed time — LTC and the wall clock are ignored for the countdown.
+    private bool _external;
+    private string _shownSource = "";
+    private double _externalPos;
+    private long _externalTick;
+    private bool _externalPlaying;
+
+    /// <summary>True while the now-playing countdown is being fed by Playback.</summary>
+    public bool IsExternal => _external;
+
     /// <summary>"" (nothing), "cued" (waiting for timecode) or "playing".</summary>
     [ObservableProperty]
     private string playState = "";
@@ -247,6 +258,52 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
         UpdateTimerGate();
     }
 
+    /// <summary>Playback is on a song: show it as now playing and run the countdown off
+    /// Playback's playhead (<see cref="UpdateExternal"/>) until <see cref="ReleaseExternal"/>.</summary>
+    public void CueExternal(string songName, double lengthSeconds, string bpm = "",
+        bool chromatic = false, string fromKey = "", string keyChangeKey = "", double keyChangeSeconds = 0)
+    {
+        _external = true;
+        _externalPos = 0;
+        _externalTick = Environment.TickCount64;
+        _externalPlaying = false;
+
+        NowPlayingName = songName;
+        NowPlayingBpm = FormatBpm(bpm);
+        _lengthSeconds = lengthSeconds;
+        _shownCountdownSec = int.MinValue;
+        _anchorWallTick = Environment.TickCount64;
+        _fromKey = fromKey.Trim();
+        _keyChangeKey = keyChangeKey.Trim();
+        _keyChangeSeconds = keyChangeSeconds;
+        _chromatic = chromatic;
+        _shownKeyChanged = false;
+        KeyChangeAlert = "";
+        ShowKeyChange(changed: false);
+        PlayState = "playing";
+        UpdateCountdown();
+        UpdateTimerGate();
+    }
+
+    /// <summary>Latest playhead from Playback (seconds) and whether it's rolling.</summary>
+    public void UpdateExternal(double positionSeconds, bool playing)
+    {
+        if (!_external)
+            return;
+        _externalPos = Math.Max(0, positionSeconds);
+        _externalTick = Environment.TickCount64;
+        _externalPlaying = playing;
+        UpdateCountdown();
+    }
+
+    /// <summary>Playback went away (disconnected, stale, no song) — clear the now-playing panel.</summary>
+    public void ReleaseExternal()
+    {
+        if (!_external)
+            return;
+        StopCountdown();
+    }
+
     /// <summary>Second ▶ click while cued: start the countdown on the wall clock now.
     /// Timecode takes over (and re-syncs the position) whenever it arrives.</summary>
     public void StartManual()
@@ -303,6 +360,7 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
 
     public void StopCountdown()
     {
+        _external = false;
         NowPlayingName = "";
         NowPlayingBpm = "";
         NowPlayingKey = "";
@@ -396,7 +454,8 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
     private void UpdateCountdown()
     {
         var m = _monitor;
-        var tc = m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1 && m.MsSinceAudio < StalledMs;
+        var external = _external;
+        var tc = !external && m is not null && m.Locked && m.CurrentBits >= 0 && m.MeasuredFps > 1 && m.MsSinceAudio < StalledMs;
 
         if (PlayState == "cued")
         {
@@ -406,8 +465,21 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
             PlayState = "playing";
         }
 
+        var source = external ? (_externalPlaying ? " · Playback" : " · Playback stopped")
+                   : tc ? " · timecode" : " · manual";
+        if (source != _shownSource)
+        {
+            _shownSource = source;
+            _shownCountdownSec = int.MinValue; // the sub line names the source — redraw it
+        }
         double elapsed;
-        if (tc)
+        if (external)
+        {
+            // Playback's heartbeat is 1 s apart: run the playhead on between beats while rolling.
+            elapsed = _externalPos + (_externalPlaying ? Math.Min(Environment.TickCount64 - _externalTick, 1500) / 1000.0 : 0);
+            _anchorWallTick = Environment.TickCount64 - (long)(elapsed * 1000);
+        }
+        else if (tc)
         {
             // Synced to the timeline: elapsed IS the timecode position (mm:ss:ff),
             // so a 3:00 song with timecode at 2:00 shows 1:00 remaining no matter
@@ -457,14 +529,15 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
             if (remaining >= 0)
             {
                 CountdownText = SongLength.Format(remaining);
-                CountdownState = remaining <= 10 ? "crit" : remaining <= 30 ? "warn" : "ok";
-                CountdownSub = $"of {SongLength.Format(_lengthSeconds)}{(tc ? " · timecode" : " · manual")}";
+                CountdownState = external && !_externalPlaying ? "ok"
+                               : remaining <= 10 ? "crit" : remaining <= 30 ? "warn" : "ok";
+                CountdownSub = $"of {SongLength.Format(_lengthSeconds)}{source}";
             }
             else
             {
                 CountdownText = "+" + SongLength.Format(-remaining);
                 CountdownState = "over";
-                CountdownSub = $"over — song is {SongLength.Format(_lengthSeconds)}";
+                CountdownSub = $"over — song is {SongLength.Format(_lengthSeconds)}{(external ? source : "")}";
             }
         }
         else
@@ -475,8 +548,7 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
             _shownCountdownSec = second;
             CountdownText = SongLength.Format(elapsed);
             CountdownState = "up";
-            CountdownSub = tc ? "elapsed · timecode — no length in the sheet"
-                              : "elapsed — no length in the sheet";
+            CountdownSub = $"elapsed{source} — no length known";
         }
     }
 

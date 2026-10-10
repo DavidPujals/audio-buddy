@@ -2,181 +2,196 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Settings"
-        Width="480" SizeToContent="Height"
+        Width="700" SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BackBrush}"
         Foreground="{StaticResource TextBrush}"
         FontFamily="Segoe UI" FontSize="13"
-        TextOptions.TextFormattingMode="Display"
-        FocusManager.FocusedElement="{Binding ElementName=IdBox}">
-    <StackPanel Margin="18,16">
-        <TextBlock Text="GOOGLE SHEET" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
-        <TextBlock Text="Paste the spreadsheet ID or the full sheet URL. Share the sheet as &quot;Anyone with the link: Viewer&quot;, or sign in with Google below if it's private."
-                   Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,0,0,8" />
-        <TextBox x:Name="IdBox" MinHeight="30" />
+        TextOptions.TextFormattingMode="Display">
+    <Grid Margin="12,12,18,14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="168" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <Grid Margin="0,10,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Name="GoogleStatusText" Grid.Column="0" VerticalAlignment="Center"
-                       Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="1,0,10,0" />
-            <Button x:Name="GoogleAuthButton" Grid.Column="1" MinWidth="140" Padding="10,5"
-                    VerticalAlignment="Center" Click="GoogleAuth_Click" />
-        </Grid>
+        <!-- Sidebar: one page at a time so the window stays a sensible height -->
+        <Border Grid.Row="0" Grid.Column="0" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,1,0"
+                Padding="0,2,10,0" Margin="0,0,16,0">
+            <ListBox x:Name="NavList" SelectionChanged="NavList_SelectionChanged" Padding="0">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                        <Setter Property="Padding" Value="12,8" />
+                        <Setter Property="FontSize" Value="13" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBoxItem Content="Database" />
+                <ListBoxItem Content="Audio inputs" />
+                <ListBoxItem Content="SPL meter" />
+                <ListBoxItem Content="Playback" />
+            </ListBox>
+        </Border>
 
-        <Grid Margin="0,12,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Grid.Column="0">
-                <TextBlock Text="SONGS TAB" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
-                <TextBox x:Name="SongsTabBox" MinHeight="30" />
+        <Grid Grid.Row="0" Grid.Column="1" MinHeight="430">
+
+            <!-- ============================ Database ============================ -->
+            <StackPanel x:Name="PageDatabase">
+                <TextBlock Text="GOOGLE SHEET" Style="{StaticResource SectionHeader}" Margin="1,4,0,6" />
+                <TextBlock Text="The master song list, default keys and leader names live in a Google Sheet. Paste the spreadsheet ID or the full sheet URL. Share the sheet as &quot;Anyone with the link: Viewer&quot;, or sign in with Google below if it's private."
+                           Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,0,0,8" />
+                <TextBox x:Name="IdBox" MinHeight="30" />
+
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="GoogleStatusText" Grid.Column="0" VerticalAlignment="Center"
+                               Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="1,0,10,0" />
+                    <Button x:Name="GoogleAuthButton" Grid.Column="1" MinWidth="140" Padding="10,5"
+                            VerticalAlignment="Center" Click="GoogleAuth_Click" />
+                </Grid>
+
+                <Grid Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="SONGS TAB" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
+                        <TextBox x:Name="SongsTabBox" MinHeight="30" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="LEADERS TAB" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
+                        <TextBox x:Name="LeadersTabBox" MinHeight="30" />
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="Songs: Song Name · Default Key · Length · BPM · Chromatic · Key Change · Key Change At. Leaders: one name per row."
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,6,0,0" />
             </StackPanel>
-            <StackPanel Grid.Column="2">
-                <TextBlock Text="LEADERS TAB" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
-                <TextBox x:Name="LeadersTabBox" MinHeight="30" />
+
+            <!-- ============================ Audio inputs ============================ -->
+            <StackPanel x:Name="PageAudio" Visibility="Collapsed">
+                <TextBlock Text="TIMECODE (LTC)" Style="{StaticResource SectionHeader}" Margin="1,4,0,6" />
+                <ComboBox x:Name="TimecodeDeviceBox" />
+                <TextBlock Text="WDM audio input carrying SMPTE LTC timecode. The side panel shows the running timecode; with a song cued, the countdown locks to it."
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
+
+                <TextBlock Text="KEY DETECTION" Style="{StaticResource SectionHeader}" Margin="1,18,0,6" />
+                <ComboBox x:Name="KeyDeviceBox" />
+                <TextBlock Text="WDM audio input with the band / music feed — the detected key shows in the KEY section. A feed with bass in it works best."
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
             </StackPanel>
-        </Grid>
 
-        <Grid Margin="1,20,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="AUDIO INPUTS" Style="{StaticResource SectionHeader}" />
-            <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
-                       Fill="{StaticResource HairlineBrush}" />
-        </Grid>
+            <!-- ============================ SPL meter ============================ -->
+            <StackPanel x:Name="PageSpl" Visibility="Collapsed">
+                <CheckBox x:Name="SplEnabledBox" Content="Show a live SPL(A) meter in the side panel" Margin="1,6,0,0" />
 
-        <TextBlock Text="TIMECODE (LTC)" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,8,0,5" />
-        <ComboBox x:Name="TimecodeDeviceBox" />
-        <TextBlock Text="WDM audio input carrying SMPTE LTC timecode"
-                   Foreground="{StaticResource FaintBrush}" FontSize="11" Margin="2,4,0,0" />
+                <TextBlock Text="INPUT" Style="{StaticResource SectionHeader}" Margin="1,16,0,6" />
+                <ComboBox x:Name="SplDeviceBox" />
+                <TextBlock Text="WDM audio input with the measurement mic"
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" Margin="2,4,0,0" />
 
-        <TextBlock Text="KEY DETECTION" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,12,0,5" />
-        <ComboBox x:Name="KeyDeviceBox" />
-        <TextBlock Text="WDM audio input with the band / music feed — the detected key shows under the timecode"
-                   Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
+                <Grid Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="RESPONSE" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
+                        <ComboBox x:Name="SplResponseBox">
+                            <ComboBoxItem Content="Slow (1 s)" />
+                            <ComboBoxItem Content="Fast (125 ms)" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="CALIBRATION OFFSET" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="−1 dB" MinWidth="52" Padding="6,5" Click="SplOffsetDown_Click" />
+                            <TextBox x:Name="SplOffsetBox" Width="58" Margin="6,0" MinHeight="28"
+                                     HorizontalContentAlignment="Center" FontFamily="Consolas"
+                                     TextChanged="SplOffset_TextChanged" />
+                            <Button Content="+1 dB" MinWidth="52" Padding="6,5" Click="SplOffsetUp_Click" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="Offset applies live — trim it until the readout matches a reference SPL meter"
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
 
-        <Grid Margin="1,20,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="SPL METER" Style="{StaticResource SectionHeader}" />
-            <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
-                       Fill="{StaticResource HairlineBrush}" />
-        </Grid>
-
-        <CheckBox x:Name="SplEnabledBox" Content="Show a live SPL(A) meter in the side panel" Margin="1,8,0,0" />
-
-        <TextBlock Text="INPUT" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,12,0,5" />
-        <ComboBox x:Name="SplDeviceBox" />
-        <TextBlock Text="WDM audio input with the measurement mic"
-                   Foreground="{StaticResource FaintBrush}" FontSize="11" Margin="2,4,0,0" />
-
-        <Grid Margin="0,12,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Grid.Column="0">
-                <TextBlock Text="RESPONSE" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
-                <ComboBox x:Name="SplResponseBox">
-                    <ComboBoxItem Content="Slow (1 s)" />
-                    <ComboBoxItem Content="Fast (125 ms)" />
-                </ComboBox>
-            </StackPanel>
-            <StackPanel Grid.Column="2">
-                <TextBlock Text="CALIBRATION OFFSET" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
+                <TextBlock Text="COLOUR ZONES" Style="{StaticResource SectionHeader}" Margin="1,16,0,6" />
                 <StackPanel Orientation="Horizontal">
-                    <Button Content="−1 dB" MinWidth="52" Padding="6,5" Click="SplOffsetDown_Click" />
-                    <TextBox x:Name="SplOffsetBox" Width="58" Margin="6,0" MinHeight="28"
-                             HorizontalContentAlignment="Center" FontFamily="Consolas"
-                             TextChanged="SplOffset_TextChanged" />
-                    <Button Content="+1 dB" MinWidth="52" Padding="6,5" Click="SplOffsetUp_Click" />
+                    <TextBlock Text="YELLOW FROM" Foreground="{StaticResource DimBrush}" FontSize="11"
+                               VerticalAlignment="Center" Margin="1,0,7,0" />
+                    <TextBox x:Name="SplYellowBox" Width="52" MinHeight="28"
+                             HorizontalContentAlignment="Center" FontFamily="Consolas" />
+                    <TextBlock Text="RED FROM" Foreground="{StaticResource DimBrush}" FontSize="11"
+                               VerticalAlignment="Center" Margin="16,0,7,0" />
+                    <TextBox x:Name="SplRedBox" Width="52" MinHeight="28"
+                             HorizontalContentAlignment="Center" FontFamily="Consolas" />
+                    <TextBlock Text="dB(A)" Foreground="{StaticResource FaintBrush}" FontSize="11"
+                               VerticalAlignment="Center" Margin="8,0,0,0" />
                 </StackPanel>
+                <TextBlock Text="The readout is green below the yellow level"
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" Margin="2,4,0,0" />
+            </StackPanel>
+
+            <!-- ============================ Playback ============================ -->
+            <StackPanel x:Name="PagePlayback" Visibility="Collapsed">
+                <TextBlock Text="MULTITRACKS PLAYBACK" Style="{StaticResource SectionHeader}" Margin="1,4,0,6" />
+                <TextBlock Text="Connects to the computer running Playback (its Remote channel) so Now Playing follows whatever Playback is on — song, playhead and length."
+                           Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,0,0,8" />
+                <TextBlock Text="PLAYBACK COMPUTER" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="PlaybackHostBox" Grid.Column="0" IsEditable="True" FontFamily="Consolas" MinHeight="30" />
+                    <Button x:Name="FindPlaybackButton" Grid.Column="1" Content="Find Playback" MinWidth="110" Margin="8,0,0,0"
+                            Click="FindPlayback_Click" ToolTip="Scans this PC's networks for a Playback with Allow Remote Connections on" />
+                </Grid>
+                <TextBlock x:Name="PlaybackFindText"
+                           Text="Click Find Playback to scan the network, or type the Playback computer's name or IP. Playback needs Allow Remote Connections on (port 8080). Leave blank to turn the listener off."
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
+
+                <Grid Margin="1,20,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="MULTITRACKS ACCOUNT" Style="{StaticResource SectionHeader}" />
+                    <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
+                               Fill="{StaticResource HairlineBrush}" />
+                </Grid>
+                <TextBlock Text="Names Playback's songs, reads their keys and lengths, and sets SMPTE timecode on setlist songs — all through your MultiTracks setlists (Live Bundle / MultiTracks One). Needs an OAuth client ID issued by MultiTracks for this app — ask support@multitracks.com."
+                           Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,8" />
+                <TextBlock Text="CLIENT ID" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
+                <TextBox x:Name="MultiTracksClientIdBox" MinHeight="30" FontFamily="Consolas" TextChanged="MultiTracksClientId_TextChanged" />
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="MultiTracksStatusText" Grid.Column="0" VerticalAlignment="Center"
+                               Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="1,0,10,0" />
+                    <Button x:Name="MultiTracksAuthButton" Grid.Column="1" MinWidth="140" Padding="10,5"
+                            VerticalAlignment="Center" Click="MultiTracksAuth_Click" />
+                </Grid>
             </StackPanel>
         </Grid>
-        <TextBlock Text="Offset applies live — trim it until the readout matches a reference SPL meter"
-                   Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
 
-        <TextBlock Text="COLOUR ZONES" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,12,0,5" />
-        <StackPanel Orientation="Horizontal">
-            <TextBlock Text="YELLOW FROM" Foreground="{StaticResource DimBrush}" FontSize="11"
-                       VerticalAlignment="Center" Margin="1,0,7,0" />
-            <TextBox x:Name="SplYellowBox" Width="52" MinHeight="28"
-                     HorizontalContentAlignment="Center" FontFamily="Consolas" />
-            <TextBlock Text="RED FROM" Foreground="{StaticResource DimBrush}" FontSize="11"
-                       VerticalAlignment="Center" Margin="16,0,7,0" />
-            <TextBox x:Name="SplRedBox" Width="52" MinHeight="28"
-                     HorizontalContentAlignment="Center" FontFamily="Consolas" />
-            <TextBlock Text="dB(A)" Foreground="{StaticResource FaintBrush}" FontSize="11"
-                       VerticalAlignment="Center" Margin="8,0,0,0" />
-        </StackPanel>
-        <TextBlock Text="The readout is green below the yellow level"
-                   Foreground="{StaticResource FaintBrush}" FontSize="11" Margin="2,4,0,0" />
-
-        <Grid Margin="1,20,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="MULTITRACKS PLAYBACK" Style="{StaticResource SectionHeader}" />
-            <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
-                       Fill="{StaticResource HairlineBrush}" />
-        </Grid>
-
-        <TextBlock Text="PLAYBACK COMPUTER" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,8,0,5" />
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <ComboBox x:Name="PlaybackHostBox" Grid.Column="0" IsEditable="True" FontFamily="Consolas" MinHeight="30" />
-            <Button x:Name="FindPlaybackButton" Grid.Column="1" Content="Find Playback" MinWidth="110" Margin="8,0,0,0"
-                    Click="FindPlayback_Click" ToolTip="Scans this PC's networks for a Playback with Allow Remote Connections on" />
-        </Grid>
-        <TextBlock x:Name="PlaybackFindText"
-                   Text="Click Find Playback to scan the network, or type the Playback computer's name or IP. Playback needs Allow Remote Connections on (port 8080). Leave blank to turn the listener off."
-                   Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
-
-        <Grid Margin="1,20,0,2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="MULTITRACKS ACCOUNT" Style="{StaticResource SectionHeader}" />
-            <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
-                       Fill="{StaticResource HairlineBrush}" />
-        </Grid>
-        <TextBlock Text="Names Playback's songs straight from your MultiTracks setlists (Live Bundle / MultiTracks One). Needs an OAuth client ID issued by MultiTracks for this app — ask support@multitracks.com."
-                   Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,8" />
-        <TextBlock Text="CLIENT ID" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
-        <TextBox x:Name="MultiTracksClientIdBox" MinHeight="30" FontFamily="Consolas" TextChanged="MultiTracksClientId_TextChanged" />
-        <Grid Margin="0,10,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Name="MultiTracksStatusText" Grid.Column="0" VerticalAlignment="Center"
-                       Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="1,0,10,0" />
-            <Button x:Name="MultiTracksAuthButton" Grid.Column="1" MinWidth="140" Padding="10,5"
-                    VerticalAlignment="Center" Click="MultiTracksAuth_Click" />
-        </Grid>
-
-        <Grid Margin="0,20,0,0">
+        <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,18,0,0">
             <Button Content="About" MinWidth="76" HorizontalAlignment="Left" Click="About_Click" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Cancel" MinWidth="76" IsCancel="True" />
                 <Button Content="Save &amp; sync" MinWidth="96" Margin="6,0,0,0" IsDefault="True" Click="Save_Click" />
             </StackPanel>
         </Grid>
-    </StackPanel>
+    </Grid>
 </Window>

@@ -298,6 +298,20 @@ public partial class MainWindow : Window
         await _vm.RefreshPlaybackNamesAsync();
     }
 
+    private PlaybackTimecodeDialog? _timecodeDialog;
+
+    private void PlaybackTimecode_Click(object sender, RoutedEventArgs e)
+    {
+        if (_timecodeDialog is { IsVisible: true })
+        {
+            _timecodeDialog.Activate();
+            return;
+        }
+        _timecodeDialog = new PlaybackTimecodeDialog(_vm) { Owner = this };
+        _timecodeDialog.Closed += (_, _) => _timecodeDialog = null;
+        _timecodeDialog.Show();
+    }
+
     private bool _matching;
 
     private async void MatchPlayback_Click(object sender, RoutedEventArgs e)

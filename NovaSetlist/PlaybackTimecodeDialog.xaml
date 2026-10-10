@@ -1,0 +1,93 @@
+<Window x:Class="NovaSetlist.PlaybackTimecodeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Playback timecode"
+        Width="620" Height="560" MinWidth="520" MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackBrush}"
+        Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI" FontSize="13"
+        TextOptions.TextFormattingMode="Display">
+    <DockPanel Margin="18,16">
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="Sets the SMPTE timecode on songs in a MultiTracks setlist — the settings Playback uses when it generates timecode. Start at 0:00 gives the song its own SMPTE start of 00:00:00:00 at the top of its timeline; Follow default hands the song back to its default arrangement's settings."
+                       Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,0,0,10" />
+            <TextBlock Text="SETLIST" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="SetlistBox" Grid.Column="0" DisplayMemberPath="Label" MinHeight="30"
+                          SelectionChanged="SetlistBox_SelectionChanged" />
+                <Button x:Name="ReloadButton" Grid.Column="1" Content="Reload from MultiTracks" Margin="8,0,0,0" MinWidth="150"
+                        Click="Reload_Click" ToolTip="Pulls the current setlists from the MultiTracks account (needs the sign-in)" />
+            </Grid>
+            <TextBlock x:Name="HintText" Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
+            <CheckBox x:Name="EnableBox" Content="Turn SMPTE output on for the song when setting it to 0:00" IsChecked="True" Margin="1,10,0,0" />
+        </StackPanel>
+
+        <Grid DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="AllZeroButton" Content="All songs: start at 0:00" MinWidth="150" Click="AllZero_Click" />
+                <Button x:Name="AllFollowButton" Content="All songs: follow default" MinWidth="150" Margin="6,0,0,0" Click="AllFollow_Click" />
+            </StackPanel>
+            <Button Content="Close" MinWidth="76" HorizontalAlignment="Right" IsCancel="True" />
+        </Grid>
+        <TextBlock DockPanel.Dock="Bottom" x:Name="StatusText" Foreground="{StaticResource DimBrush}" FontSize="11.5"
+                   TextWrapping="Wrap" Margin="1,10,0,0" />
+
+        <Border BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" CornerRadius="4" Margin="0,12,0,0"
+                Background="{StaticResource FieldBrush}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6,4">
+                <StackPanel>
+                    <TextBlock x:Name="EmptyText" Text="No songs in this setlist."
+                               Foreground="{StaticResource FaintBrush}" FontSize="12" Margin="6,8" Visibility="Collapsed" />
+                    <ItemsControl x:Name="SongList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Order}" Foreground="{StaticResource FaintBrush}"
+                                               FontFamily="Consolas" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Detail}" Foreground="{StaticResource FaintBrush}" FontSize="11"
+                                                   FontFamily="Consolas" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding Status}" FontSize="11" Margin="10,0"
+                                               VerticalAlignment="Center" MaxWidth="170" TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding StatusState}" Value="busy">
+                                                        <Setter Property="Foreground" Value="{StaticResource DimBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StatusState}" Value="error">
+                                                        <Setter Property="Foreground" Value="{StaticResource RedBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <Button Grid.Column="4" Content="Start at 0:00" Padding="8,3" FontSize="11" Click="Zero_Click"
+                                            ToolTip="SMPTE start 00:00:00:00 at the top of this song's timeline (its own settings)" />
+                                    <Button Grid.Column="5" Content="Follow default" Padding="8,3" FontSize="11" Margin="4,0,0,0" Click="Follow_Click"
+                                            ToolTip="Use the song's default arrangement SMPTE settings in this setlist" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

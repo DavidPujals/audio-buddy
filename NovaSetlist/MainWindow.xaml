@@ -1045,41 +1045,106 @@
                                    Fill="{StaticResource HairlineBrush}" />
                     </Grid>
 
-                    <TextBlock Text="{Binding KeyText}" HorizontalAlignment="Center"
-                               FontFamily="Consolas" FontWeight="Bold">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="FontSize" Value="26" />
-                                <Setter Property="Margin" Value="0,8,0,2" />
-                                <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="FontSize" Value="20" />
-                                        <Setter Property="Margin" Value="0,4,0,1" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding KeyState}" Value="detected">
-                                        <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding KeyState}" Value="listening">
-                                        <Setter Property="Foreground" Value="{StaticResource DimBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="{Binding KeySub}" HorizontalAlignment="Center"
-                               Foreground="{StaticResource DimBrush}" FontSize="11"
-                               TextTrimming="CharacterEllipsis" MaxWidth="270">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                    <!-- Two readouts side by side once Playback reports a key: the detected key
+                         (left) and the key MultiTracks has the song in (right). -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition>
+                                <ColumnDefinition.Style>
+                                    <Style TargetType="ColumnDefinition">
+                                        <Setter Property="Width" Value="*" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.Playback.SongKey, RelativeSource={RelativeSource AncestorType=Window}}" Value="">
+                                                <Setter Property="Width" Value="0" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ColumnDefinition.Style>
+                            </ColumnDefinition>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="{Binding KeyText}" HorizontalAlignment="Center"
+                                       FontFamily="Consolas" FontWeight="Bold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="26" />
+                                        <Setter Property="Margin" Value="0,8,0,2" />
+                                        <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                <Setter Property="FontSize" Value="20" />
+                                                <Setter Property="Margin" Value="0,4,0,1" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding KeyState}" Value="detected">
+                                                <Setter Property="Foreground" Value="{StaticResource GreenBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding KeyState}" Value="listening">
+                                                <Setter Property="Foreground" Value="{StaticResource DimBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock HorizontalAlignment="Center" Foreground="{StaticResource DimBrush}" FontSize="11"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="270">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="{Binding KeySub}" />
+                                        <Style.Triggers>
+                                            <!-- Next to Playback's key, label this one so the two can't be confused -->
+                                            <DataTrigger Binding="{Binding KeyState}" Value="detected">
+                                                <Setter Property="Text" Value="detected" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" DataContext="{Binding DataContext.Playback, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SongKey}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="{Binding SongKey}" HorizontalAlignment="Center"
+                                       FontFamily="Consolas" FontWeight="Bold" Foreground="{StaticResource TextBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="26" />
+                                        <Setter Property="Margin" Value="0,8,0,2" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                <Setter Property="FontSize" Value="20" />
+                                                <Setter Property="Margin" Value="0,4,0,1" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="Playback" HorizontalAlignment="Center"
+                                       Foreground="{StaticResource DimBrush}" FontSize="11">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
 
                 <!-- MultiTracks Playback remote listener (optional — host set in Settings) -->
@@ -1148,6 +1213,19 @@
                     <Button Content="Refresh names from MultiTracks" HorizontalAlignment="Center" Margin="0,6,0,0"
                             Padding="10,3" FontSize="11" Click="RefreshPlaybackNames_Click"
                             ToolTip="Pulls every recent setlist from the MultiTracks account and names Playback's songs from it">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="Timecode in Playback…" HorizontalAlignment="Center" Margin="0,4,0,0"
+                            Padding="10,3" FontSize="11" Click="PlaybackTimecode_Click"
+                            ToolTip="Set the SMPTE timecode start on songs in a MultiTracks setlist (0:00, or follow the default arrangement)">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                                 <Style.Triggers>

@@ -107,6 +107,31 @@ public partial class SettingsDialog : Window
 
         UpdateGoogleUi();
         UpdateMultiTracksUi();
+
+        // Reopen on the page that was open last time (this run) — settings are usually
+        // revisited to tweak the same thing.
+        NavList.SelectedIndex = Math.Clamp(s_lastPage, 0, NavList.Items.Count - 1);
+        Loaded += (_, _) => (NavList.SelectedIndex == 0 ? IdBox : null)?.Focus();
+    }
+
+    /// <summary>Sidebar page to open on: 0 Database, 1 Audio inputs, 2 SPL meter, 3 Playback.</summary>
+    private static int s_lastPage;
+
+    public static int PlaybackPage => 3;
+
+    /// <summary>Opens the dialog on a given page (e.g. straight to Playback from the side panel).</summary>
+    public void ShowPage(int index) => NavList.SelectedIndex = Math.Clamp(index, 0, NavList.Items.Count - 1);
+
+    private void NavList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var index = NavList.SelectedIndex;
+        if (index < 0)
+            return;
+        s_lastPage = index;
+        PageDatabase.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
+        PageAudio.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+        PageSpl.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        PagePlayback.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public string MultiTracksClientId => MultiTracksClientIdBox.Text.Trim();
