@@ -23,16 +23,19 @@ public sealed class SheetService
 
     public SheetService(GoogleAuthService auth) => _auth = auth;
 
-    public async Task<(List<Song> Songs, List<string> Leaders)> FetchAsync(AppConfig config)
+    public sealed record SheetData(List<Song> Songs, List<string> Leaders, List<PlaybackRow> Playback);
+
+    public async Task<SheetData> FetchAsync(AppConfig config)
     {
         if (string.IsNullOrWhiteSpace(config.SpreadsheetId) || config.SpreadsheetId == "PUT_ID_HERE")
             throw new InvalidOperationException("No Spreadsheet ID set — open Settings and paste your sheet's ID or URL.");
 
-        // Both tabs in flight at once — halves refresh latency. WhenAll observes
-        // both outcomes, so one tab failing doesn't leave the other's exception dangling.
+        // All tabs in flight at once — keeps refresh latency to one round trip. WhenAll observes
+        // every outcome, so one tab failing doesn't leave another's exception dangling.
         var songsTask = FetchTabAsync(config.SpreadsheetId, config.SongsTab);
         var leadersTask = FetchTabAsync(config.SpreadsheetId, config.LeadersTab);
-        await Task.WhenAll(songsTask, leadersTask);
+        var playbackTask = FetchPlaybackTabAsync(config);
+        await Task.WhenAll(songsTask, leadersTask, playbackTask);
         var songsRows = songsTask.Result;
         var leadersRows = leadersTask.Result;
 
@@ -55,8 +58,132 @@ public sealed class SheetService
             .Where(n => n.Length > 0)
             .ToList();
 
-        return (songs, leaders);
+        return new SheetData(songs, leaders, playbackTask.Result);
     }
+
+    // ---------- the Playback tab (shared Playback-ID database) ----------
+
+    private static readonly string[] PlaybackHeaders =
+        { "Playback ID", "Song", "Key", "BPM", "Length", "Setlist", "Setlist ID", "Date", "Order" };
+
+    /// <summary>The Playback tab's rows; empty when the tab doesn't exist yet (that isn't an
+    /// error — the tab appears the first time a machine publishes).</summary>
+    private async Task<List<PlaybackRow>> FetchPlaybackTabAsync(AppConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(config.PlaybackTab))
+            return new List<PlaybackRow>();
+        List<string[]> rows;
+        try
+        {
+            rows = await FetchTabAsync(config.SpreadsheetId, config.PlaybackTab);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+        {
+            return new List<PlaybackRow>(); // no such tab (yet) — the Songs fetch reports real sheet problems
+        }
+        return rows
+            .Select(r => new PlaybackRow
+            {
+                SetlistSongId = ParseLong(Cell(r, 0)),
+                Title = Cell(r, 1),
+                Key = Music.Keys.Normalize(Cell(r, 2)),
+                Bpm = Cell(r, 3),
+                Length = Cell(r, 4),
+                Setlist = Cell(r, 5),
+                SetlistId = ParseLong(Cell(r, 6)),
+                Date = Cell(r, 7),
+                Order = (int)ParseLong(Cell(r, 8)),
+            })
+            .Where(p => p.SetlistSongId > 0 && p.Title.Length > 0)
+            .ToList();
+    }
+
+    /// <summary>Replaces the Playback tab's contents with these rows (creating the tab if
+    /// needed). Requires Google sign-in with edit access.</summary>
+    public async Task PublishPlaybackAsync(AppConfig config, IReadOnlyList<PlaybackRow> rows)
+    {
+        if (!_auth.IsSignedIn)
+            throw new InvalidOperationException("Sign in with Google (Settings → Database) to publish Playback names to the sheet.");
+        var tab = config.PlaybackTab;
+        if (string.IsNullOrWhiteSpace(tab))
+            throw new InvalidOperationException("Set a Playback tab name in Settings → Database first.");
+
+        await EnsureTabAsync(config, tab, rows.Count + 1, PlaybackHeaders.Length);
+
+        var clearUrl = ValuesUrlFor(config, tab, "A:Z") + ":clear";
+        using (var cleared = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Post, clearUrl)
+               {
+                   Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+               }))
+            await ThrowIfFailedAsync(cleared);
+
+        var values = new List<object[]> { PlaybackHeaders.Cast<object>().ToArray() };
+        values.AddRange(rows.Select(p => new object[]
+            { p.SetlistSongId, p.Title, p.Key, p.Bpm, p.Length, p.Setlist, p.SetlistId, p.Date, p.Order }));
+        var url = ValuesUrlFor(config, tab, $"A1:I{values.Count}") + "?valueInputOption=RAW";
+        var body = JsonSerializer.Serialize(new { values });
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Put, url)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        });
+        await ThrowIfFailedAsync(response);
+    }
+
+    /// <summary>Makes sure a tab exists with at least this many rows and columns.</summary>
+    private async Task EnsureTabAsync(AppConfig config, string tab, int rows, int columns)
+    {
+        var url = $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(config.SpreadsheetId)}" +
+                  "?fields=sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))";
+        using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Get, url));
+        await ThrowIfFailedAsync(response);
+
+        long sheetId = -1;
+        int haveRows = 0, haveCols = 0;
+        using (var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            foreach (var sheet in doc.RootElement.GetProperty("sheets").EnumerateArray())
+            {
+                var props = sheet.GetProperty("properties");
+                if (!string.Equals(props.GetProperty("title").GetString(), tab, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                sheetId = props.GetProperty("sheetId").GetInt64();
+                if (props.TryGetProperty("gridProperties", out var grid))
+                {
+                    haveRows = grid.TryGetProperty("rowCount", out var rc) ? rc.GetInt32() : 0;
+                    haveCols = grid.TryGetProperty("columnCount", out var cc) ? cc.GetInt32() : 0;
+                }
+                break;
+            }
+        }
+
+        var requests = new List<object>();
+        if (sheetId < 0)
+        {
+            requests.Add(new { addSheet = new { properties = new { title = tab, gridProperties = new { rowCount = Math.Max(rows + 100, 1000), columnCount = Math.Max(columns, 26) } } } });
+        }
+        else
+        {
+            if (haveRows < rows)
+                requests.Add(new { appendDimension = new { sheetId, dimension = "ROWS", length = rows - haveRows + 100 } });
+            if (haveCols < columns)
+                requests.Add(new { appendDimension = new { sheetId, dimension = "COLUMNS", length = columns - haveCols } });
+        }
+        if (requests.Count == 0)
+            return;
+
+        var batchUrl = $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(config.SpreadsheetId)}:batchUpdate";
+        var body = JsonSerializer.Serialize(new { requests });
+        using var batch = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Post, batchUrl)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        });
+        await ThrowIfFailedAsync(batch);
+    }
+
+    private static long ParseLong(string cell) =>
+        long.TryParse(cell.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n
+        : double.TryParse(cell.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? (long)d
+        : 0;
 
     /// <summary>Fetches one tab as rows of trimmed cells, header row already skipped.</summary>
     private async Task<List<string[]>> FetchTabAsync(string spreadsheetId, string tab)
@@ -309,9 +436,11 @@ public sealed class SheetService
     }
 
     /// <summary>…/values/'Songs'!{a1} — the tab name quoted, single quotes doubled.</summary>
-    private static string ValuesUrl(AppConfig config, string a1)
+    private static string ValuesUrl(AppConfig config, string a1) => ValuesUrlFor(config, config.SongsTab, a1);
+
+    private static string ValuesUrlFor(AppConfig config, string tab, string a1)
     {
-        var range = "'" + config.SongsTab.Replace("'", "''") + "'!" + a1;
+        var range = "'" + tab.Replace("'", "''") + "'!" + a1;
         return $"https://sheets.googleapis.com/v4/spreadsheets/{Uri.EscapeDataString(config.SpreadsheetId)}" +
                $"/values/{Uri.EscapeDataString(range)}";
     }

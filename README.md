@@ -21,6 +21,8 @@ A small Windows desktop app for building a service (setlist) order. Add songs, p
    | Sarah |
    | Mike |
 
+   A third tab, **`Playback`**, is created and maintained by the app itself if you use MultiTracks Playback (see below) — leave it alone.
+
 2. Give the app access, either way works:
    - **Public sheet**: Share → General access → "Anyone with the link" → Viewer. No sign-in needed.
    - **Private sheet**: keep it restricted and use **Settings → Sign in with Google** in the app. Sign-in is per machine and per Windows user, survives restarts, and reads the sheet through the official Sheets API. It also lets the app *add* songs to the sheet (see manual add below). **Sign out** from the same spot.
@@ -40,6 +42,7 @@ A small Windows desktop app for building a service (setlist) order. Add songs, p
      "SpreadsheetId": "PUT_ID_HERE",
      "SongsTab": "Songs",
      "LeadersTab": "Leaders",
+     "PlaybackTab": "Playback",
      "TimecodeDevice": ""
    }
    ```
@@ -81,7 +84,9 @@ Playback reports songs as numbers, not names, and its protocol has no way to ask
 - **Match songs by order** (button in the PLAYBACK section, Playback must be stopped): the app steps Playback through its setlist — Previous to the start, Next to the end, then back to the song it was on — and names Playback song N after row N here. One click per setlist, about two seconds per song. If the two lists aren't in the same order, fix individual songs with the next option.
 - **Link one song**: select the song in Playback, then right-click its row here and choose **Link to the song playing in Playback**.
 
-- **Refresh names from MultiTracks** (button in the PLAYBACK section): Playback's song IDs are MultiTracks `setlistSongID`s, and the official MultiTracks MCP (Live Bundle / MultiTracks One) returns them with titles — catalogue songs and your own cloud uploads alike. The app signs in to your MultiTracks account (**Settings → MultiTracks account**, standard OAuth in the browser, token kept encrypted on this PC) and pulls every setlist from the last 90 days and the next 180, naming every song in one go. The one prerequisite is an **OAuth client ID issued by MultiTracks for this app** — MultiTracks' sign-in server doesn't let apps register themselves, so ask support@multitracks.com for one and paste it into Settings. If they also issue a client secret, or register a fixed redirect URI for the client (e.g. `http://127.0.0.1:48123/callback`), paste those into the fields next to it; otherwise the app uses a loopback redirect on a free port. A client ID that belongs to another app (such as a desktop AI assistant's) won't work here and isn't meant to — its registered redirect won't match, which the server reports as `invalid_request`. The app reads the map file whenever it changes, so a map regenerated outside the app (e.g. by Claude with the MultiTracks connector) also lands without a restart.
+- **The sheet's Playback tab** (the usual way): Playback's song IDs are MultiTracks `setlistSongID`s, and the sheet has a **Playback** tab (name configurable in Settings → Database) that maps each ID to its song, key, BPM, play length and setlist. Every machine reads that tab on every sync, so the names, keys and lengths are shared like the song list is. The tab is written by the app: on the machine where the names are generated (through the MultiTracks connector in Claude, which writes `%APPDATA%\NovaSetlist\multitracks-setlists.json`), the app notices the new file and publishes it to the tab automatically when signed in with Google — or press **Publish names to sheet** in the PLAYBACK section. Nothing in this path needs a MultiTracks sign-in.
+
+- **Refresh names from MultiTracks** (button in the PLAYBACK section, shown once a MultiTracks client ID is entered): the same data pulled by the app itself through the official MultiTracks MCP (Live Bundle / MultiTracks One) — catalogue songs and your own cloud uploads alike. The app signs in to your MultiTracks account (**Settings → MultiTracks account**, standard OAuth in the browser, token kept encrypted on this PC) and pulls every setlist from the last 90 days and the next 180, naming every song in one go. The one prerequisite is an **OAuth client ID issued by MultiTracks for this app** — MultiTracks' sign-in server doesn't let apps register themselves, so ask support@multitracks.com for one and paste it into Settings. If they also issue a client secret, or register a fixed redirect URI for the client (e.g. `http://127.0.0.1:48123/callback`), paste those into the fields next to it; otherwise the app uses a loopback redirect on a free port. A client ID that belongs to another app (such as a desktop AI assistant's) won't work here and isn't meant to — its registered redirect won't match, which the server reports as `invalid_request`. The app reads the map file whenever it changes, so a map regenerated outside the app (e.g. by Claude with the MultiTracks connector) also lands without a restart.
 
 Links are remembered per machine (`%APPDATA%\NovaSetlist\playback-map.json`; the file is re-read whenever it changes). Until linked, the panel shows `Song 28727477 — not linked yet`. Every frame Playback sends is also logged to `%APPDATA%\NovaSetlist\playback-capture.jsonl` (rolling, ~3 MB) — the protocol is unofficial, and that file is the evidence when something looks wrong after a Playback update.
 

@@ -11,6 +11,9 @@ public sealed class AppConfig
     public string SongsTab { get; set; } = "Songs";
     public string LeadersTab { get; set; } = "Leaders";
 
+    /// <summary>Tab holding Playback song IDs → names/keys/lengths (the shared Playback database).</summary>
+    public string PlaybackTab { get; set; } = "Playback";
+
     /// <summary>OAuth client for Google sign-in; "" = use the client id built into the app.</summary>
     public string GoogleClientId { get; set; } = "";
 
@@ -77,6 +80,8 @@ public sealed class AppConfig
                     cfg.GoogleClientSecret = cfg.GoogleClientSecret?.Trim() ?? "";
                     if (string.IsNullOrWhiteSpace(cfg.SongsTab)) cfg.SongsTab = "Songs";
                     if (string.IsNullOrWhiteSpace(cfg.LeadersTab)) cfg.LeadersTab = "Leaders";
+                    if (string.IsNullOrWhiteSpace(cfg.PlaybackTab)) cfg.PlaybackTab = "Playback";
+                    cfg.PlaybackTab = cfg.PlaybackTab.Trim();
                     cfg.TimecodeDevice = cfg.TimecodeDevice?.Trim() ?? "";
                     cfg.KeyDetectDevice = cfg.KeyDetectDevice?.Trim() ?? "";
                     cfg.SplDevice = cfg.SplDevice?.Trim() ?? "";

@@ -81,6 +81,7 @@ public partial class MainViewModel : ObservableObject
         Spl = new SplViewModel(_config);
         Playback = new PlaybackViewModel(_config);
         Playback.Updated += FollowPlayback;
+        Playback.ReferenceFileChanged += () => _ = PublishPlaybackIfNewAsync();
         MultiTracks = new MultiTracksService(_config);
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _saveTimer.Tick += (_, _) =>
@@ -93,11 +94,12 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Applies sheet settings from the Settings dialog: saves appsettings.json and re-syncs.</summary>
-    public async Task ApplySheetSettingsAsync(string spreadsheetId, string songsTab, string leadersTab)
+    public async Task ApplySheetSettingsAsync(string spreadsheetId, string songsTab, string leadersTab, string playbackTab)
     {
         _config.SpreadsheetId = SheetUrl.ExtractSpreadsheetId(spreadsheetId);
         _config.SongsTab = string.IsNullOrWhiteSpace(songsTab) ? "Songs" : songsTab.Trim();
         _config.LeadersTab = string.IsNullOrWhiteSpace(leadersTab) ? "Leaders" : leadersTab.Trim();
+        _config.PlaybackTab = string.IsNullOrWhiteSpace(playbackTab) ? "Playback" : playbackTab.Trim();
 
         if (!_config.Save())
         {
@@ -122,6 +124,8 @@ public partial class MainViewModel : ObservableObject
         if (cache is not null)
         {
             ApplyMasterData(cache.Songs, cache.Leaders, Environment.TickCount64);
+            if (cache.Playback.Count > 0)
+                Playback.ApplySheetRows(cache.Playback);
             _lastSynced = cache.LastSynced;
             StatusText = $"Using cached list — last synced {cache.LastSynced:g}";
             StatusState = "cached";
@@ -331,6 +335,62 @@ public partial class MainViewModel : ObservableObject
             : $"Playback has {ids.Count} songs, this setlist has {Items.Count} — matched the first {n} by order; right-click a row → Link to fix any";
     }
 
+    // ---------- Playback names → the sheet ----------
+
+    private static string PublishedStampPath => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NovaSetlist", "playback-published.txt");
+    private bool _publishing;
+
+    /// <summary>
+    /// Publishes this PC's Playback names file (multitracks-setlists.json — generated through
+    /// the MultiTracks connector) to the sheet's Playback tab, which every machine reads on
+    /// sync. Skipped when the file hasn't changed since it was last published, unless forced.
+    /// </summary>
+    public async Task PublishPlaybackIfNewAsync(bool force = false)
+    {
+        if (_publishing)
+            return;
+        var stamp = Playback.ReferenceFileStamp;
+        if (stamp.Length == 0)
+        {
+            if (force) StatusText = "No Playback names file on this PC to publish — it's generated here through the MultiTracks connector";
+            return;
+        }
+        string published = "";
+        try { if (System.IO.File.Exists(PublishedStampPath)) published = System.IO.File.ReadAllText(PublishedStampPath).Trim(); } catch { }
+        if (!force && published == stamp)
+            return;
+        if (!GoogleAuth.IsSignedIn)
+        {
+            if (force) StatusText = "Sign in with Google (Settings → Database) to publish Playback names to the sheet";
+            return;
+        }
+        var rows = Playback.ReferenceRowsForSheet();
+        if (rows.Count == 0)
+        {
+            if (force) StatusText = "The Playback names file on this PC is empty — nothing to publish";
+            return;
+        }
+
+        _publishing = true;
+        try
+        {
+            StatusText = $"Publishing {rows.Count} Playback names to the sheet…";
+            await _sheets.PublishPlaybackAsync(_config, rows);
+            try { System.IO.File.WriteAllText(PublishedStampPath, stamp); } catch { }
+            var setlists = rows.Select(r => r.SetlistId).Distinct().Count();
+            StatusText = $"Playback names published to the sheet — {rows.Count} songs across {setlists} setlists";
+        }
+        catch (Exception ex)
+        {
+            StatusText = "Couldn't publish Playback names to the sheet — " + Brief(ex);
+        }
+        finally
+        {
+            _publishing = false;
+        }
+    }
+
     // ---------- now playing follows Playback ----------
 
     private long _followedSongId = -1;
@@ -432,15 +492,19 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var fetchStarted = Environment.TickCount64;
-            var (songs, leaders) = await _sheets.FetchAsync(_config);
+            var (songs, leaders, playback) = await _sheets.FetchAsync(_config);
             ApplyMasterData(songs, leaders, fetchStarted);
+            Playback.ApplySheetRows(playback);
             _lastSynced = DateTime.Now;
-            _storage.SaveCache(new CacheData { Songs = songs, Leaders = leaders, LastSynced = _lastSynced.Value });
-            StatusText = $"Synced {_lastSynced:g} — {songs.Count} songs, {leaders.Count} leaders";
+            _storage.SaveCache(new CacheData { Songs = songs, Leaders = leaders, Playback = playback, LastSynced = _lastSynced.Value });
+            StatusText = $"Synced {_lastSynced:g} — {songs.Count} songs, {leaders.Count} leaders" +
+                         (playback.Count > 0 ? $", {playback.Count} Playback names" : "");
             StatusState = "ok";
             // Edits parked while signed out / offline can go up now.
             if (_pendingSheetWrites.Count > 0 && GoogleAuth.IsSignedIn)
                 RearmSheetWrite(SheetWriteDebounce);
+            // A Playback names file generated on this PC that the sheet hasn't got yet goes up too.
+            _ = PublishPlaybackIfNewAsync();
         }
         catch (Exception ex)
         {

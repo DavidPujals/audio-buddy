@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using NovaSetlist.Models;
 using NovaSetlist.Music;
 using NovaSetlist.Services;
 
@@ -77,6 +78,7 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         Host = config.PlaybackHost;
         LoadMap();
         LoadReference();
+        try { _refStamp = File.Exists(ReferencePath) ? File.GetLastWriteTimeUtc(ReferencePath) : DateTime.MinValue; } catch { }
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _timer.Tick += (_, _) => Poll();
         Restart();
@@ -160,8 +162,11 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
             var refStamp = File.Exists(ReferencePath) ? File.GetLastWriteTimeUtc(ReferencePath) : DateTime.MinValue;
             if (refStamp != _refStamp)
             {
+                // The constructor recorded the stamp at startup, so this is a real change.
                 _refStamp = refStamp;
                 LoadReference();
+                if (refStamp != DateTime.MinValue)
+                    ReferenceFileChanged?.Invoke();
             }
         }
         catch
@@ -338,11 +343,71 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         return changed;
     }
 
-    /// <summary>Reads multitracks-setlists.json (written by the MultiTracks refresh, or by hand):
-    /// per-song keys and Playback durations, plus the setlists for the timecode dialog.</summary>
+    // Two sources feed the reference: the sheet's Playback tab (every machine) and the local
+    // multitracks-setlists.json (the machine where the names are generated). The local file
+    // wins where both know a song — it's the fresher of the two there.
+    private readonly Dictionary<long, RefSong> _fileSongs = new(), _sheetSongs = new();
+    private List<RefSetlist> _fileSetlists = new(), _sheetSetlists = new();
+
+    /// <summary>Raised on the UI thread when the local reference file has changed on disk
+    /// (a fresh MultiTracks export) — the main view model publishes it to the sheet.</summary>
+    public event Action? ReferenceFileChanged;
+
+    /// <summary>Identifies the local reference file's content (its write time); "" = no file.</summary>
+    public string ReferenceFileStamp
+    {
+        get
+        {
+            try { return File.Exists(ReferencePath) ? File.GetLastWriteTimeUtc(ReferencePath).Ticks.ToString() : ""; }
+            catch { return ""; }
+        }
+    }
+
+    /// <summary>Takes the sheet's Playback tab (a sync just read it) as the shared reference.</summary>
+    public void ApplySheetRows(IReadOnlyList<PlaybackRow> rows)
+    {
+        _sheetSongs.Clear();
+        var lists = new Dictionary<long, (string Name, string Date, List<RefSong> Songs)>();
+        foreach (var r in rows)
+        {
+            var song = new RefSong(r.SetlistSongId, r.SetlistId, r.Order, r.Title.Trim(), r.Key,
+                double.TryParse(r.Bpm, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bpm) ? bpm : 0,
+                SongLength.ParseSeconds(r.Length));
+            if (song.SetlistSongId <= 0 || song.Title.Length == 0)
+                continue;
+            _sheetSongs[song.SetlistSongId] = song;
+            if (r.SetlistId > 0)
+            {
+                if (!lists.TryGetValue(r.SetlistId, out var l))
+                    lists[r.SetlistId] = l = (r.Setlist, r.Date, new List<RefSong>());
+                l.Songs.Add(song);
+            }
+        }
+        _sheetSetlists = lists.Select(p => new RefSetlist(p.Key, p.Value.Name, p.Value.Date, 0, p.Value.Songs.OrderBy(s => s.Order).ToList())).ToList();
+        Rebuild();
+        Poll();
+    }
+
+    /// <summary>The local reference file's songs in sheet-row form — what this machine publishes.</summary>
+    public List<PlaybackRow> ReferenceRowsForSheet() =>
+        _fileSetlists.SelectMany(sl => sl.Songs.Select(s => new PlaybackRow
+        {
+            SetlistSongId = s.SetlistSongId,
+            Title = s.Title,
+            Key = s.Key,
+            Bpm = s.Bpm > 0 ? s.Bpm.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) : "",
+            Length = s.Duration > 0 ? SongLength.Format(s.Duration) : "",
+            Setlist = sl.Name,
+            SetlistId = sl.Id,
+            Date = sl.Date,
+            Order = s.Order,
+        })).Where(r => r.SetlistSongId > 0 && r.Title.Length > 0).ToList();
+
+    /// <summary>Reads multitracks-setlists.json (written by the MultiTracks refresh, or by Claude
+    /// through the MultiTracks connector): per-song keys and Playback durations, plus the setlists.</summary>
     private void LoadReference()
     {
-        _refSongs.Clear();
+        _fileSongs.Clear();
         var lists = new List<RefSetlist>();
         try
         {
@@ -363,7 +428,7 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
                                     Str(s, "title"), Str(s, "key"), Dbl(s, "bpm"), Dbl(s, "durationSeconds"));
                                 songs.Add(song);
                                 if (song.SetlistSongId > 0)
-                                    _refSongs[song.SetlistSongId] = song;
+                                    _fileSongs[song.SetlistSongId] = song;
                             }
                         }
                         lists.Add(new RefSetlist(id, Str(sl, "name"), Str(sl, "date"), (int)Long(sl, "version"),
@@ -376,7 +441,25 @@ public partial class PlaybackViewModel : ObservableObject, IDisposable
         {
             // Unreadable reference — keep whatever parsed; the map still names songs.
         }
-        ReferenceSetlists = lists.OrderByDescending(l => l.Date, StringComparer.Ordinal).ThenBy(l => l.Name).ToList();
+        _fileSetlists = lists;
+        Rebuild();
+    }
+
+    /// <summary>Merges sheet and file: per song the file wins; setlists keyed by id, file wins.</summary>
+    private void Rebuild()
+    {
+        _refSongs.Clear();
+        foreach (var (id, s) in _sheetSongs)
+            _refSongs[id] = s;
+        foreach (var (id, s) in _fileSongs)
+            _refSongs[id] = s;
+
+        var lists = new Dictionary<long, RefSetlist>();
+        foreach (var l in _sheetSetlists)
+            lists[l.Id] = l;
+        foreach (var l in _fileSetlists)
+            lists[l.Id] = l;
+        ReferenceSetlists = lists.Values.OrderByDescending(l => l.Date, StringComparer.Ordinal).ThenBy(l => l.Name).ToList();
     }
 
     private static long Long(JsonElement e, string name) =>

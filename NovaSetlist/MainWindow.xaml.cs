@@ -298,6 +298,11 @@ public partial class MainWindow : Window
         await _vm.RefreshPlaybackNamesAsync();
     }
 
+    private async void PublishPlayback_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.PublishPlaybackIfNewAsync(force: true);
+    }
+
     private PlaybackTimecodeDialog? _timecodeDialog;
 
     private void PlaybackTimecode_Click(object sender, RoutedEventArgs e)
@@ -425,7 +430,7 @@ public partial class MainWindow : Window
         _vm.Spl.IsEnabled = dialog.SplEnabled;
         _vm.Playback.Apply(dialog.PlaybackHost);
         _vm.Config.MultiTracksClientId = dialog.MultiTracksClientId;
-        await _vm.ApplySheetSettingsAsync(dialog.SpreadsheetId, dialog.SongsTabName, dialog.LeadersTabName);
+        await _vm.ApplySheetSettingsAsync(dialog.SpreadsheetId, dialog.SongsTabName, dialog.LeadersTabName, dialog.PlaybackTabName);
     }
 
     protected override void OnClosed(EventArgs e)

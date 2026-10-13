@@ -13,6 +13,7 @@ public partial class SettingsDialog : Window
     public string SpreadsheetId => IdBox.Text;
     public string SongsTabName => SongsTabBox.Text;
     public string LeadersTabName => LeadersTabBox.Text;
+    public string PlaybackTabName => PlaybackTabBox.Text;
     public string TimecodeDevice => TimecodeDeviceBox.SelectedItem as string ?? TimecodeViewModel.OffDevice;
     public string KeyDetectDevice => KeyDeviceBox.SelectedItem as string ?? KeyDetectViewModel.OffDevice;
 
@@ -82,6 +83,7 @@ public partial class SettingsDialog : Window
         IdBox.Text = vm.Config.SpreadsheetId == "PUT_ID_HERE" ? "" : vm.Config.SpreadsheetId;
         SongsTabBox.Text = vm.Config.SongsTab;
         LeadersTabBox.Text = vm.Config.LeadersTab;
+        PlaybackTabBox.Text = vm.Config.PlaybackTab;
 
         vm.Timecode.RefreshDevices();
         vm.KeyDetect.RefreshDevices();
