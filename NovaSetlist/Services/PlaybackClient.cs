@@ -31,7 +31,6 @@ public sealed class PlaybackClient : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
     private ClientWebSocket? _ws;
-    private readonly SemaphoreSlim _sendGate = new(1, 1);
 
     private int _connected;          // 1 while the socket is up
     private long _lastHeartbeatTick; // Environment.TickCount64 of the last heartbeat; 0 = none yet
@@ -66,10 +65,6 @@ public sealed class PlaybackClient : IDisposable
     public string Error => _error;
     /// <summary>Name of the setlist loaded in Playback, if a load was seen while connected.</summary>
     public string SetlistName => _setlistName;
-
-    /// <summary>Raised on a background thread when a setlist-load message carries a song title
-    /// alongside a song ID (not promised by the protocol — a bonus if present).</summary>
-    public event Action<long, string>? TitleDiscovered;
 
     public void Start() => _loop ??= Task.Run(RunAsync);
 
@@ -162,33 +157,6 @@ public sealed class PlaybackClient : IDisposable
         }
     }
 
-    /// <summary>
-    /// Sends one of Playback's documented remote commands (the same messages the Playback
-    /// Remote app sends), e.g. {"transportNextSong":{}}. Only the explicit "match by order"
-    /// walk uses this; nothing else in the app ever sends. Returns false if not connected.
-    /// </summary>
-    public async Task<bool> SendAsync(string json, CancellationToken cancel = default)
-    {
-        var ws = _ws;
-        if (ws is null || ws.State != WebSocketState.Open)
-            return false;
-        await _sendGate.WaitAsync(cancel);
-        try
-        {
-            Capture("SENT " + json);
-            await ws.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, cancel);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-        finally
-        {
-            _sendGate.Release();
-        }
-    }
-
     private static string CapturePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NovaSetlist", "playback-capture.jsonl");
     private const long CaptureCapBytes = 3_000_000; // ~3 h of heartbeats, then it starts over
@@ -270,43 +238,7 @@ public sealed class PlaybackClient : IDisposable
                     File.WriteAllText(SetlistDumpPath, text);
                 }
                 catch { /* diagnostics only */ }
-                ScanForTitles(load, 0);
             }
-        }
-    }
-
-    private static readonly string[] IdKeys = { "setlistSongID", "setlistSongId", "songID", "songId", "id" };
-    private static readonly string[] NameKeys = { "name", "title", "songName", "songTitle", "displayName" };
-
-    /// <summary>Best-effort: any object carrying a song-sized integer ID next to a name string.</summary>
-    private void ScanForTitles(JsonElement el, int depth)
-    {
-        if (depth > 24)
-            return;
-        switch (el.ValueKind)
-        {
-            case JsonValueKind.Object:
-                long id = -1;
-                string? title = null;
-                foreach (var prop in el.EnumerateObject())
-                {
-                    if (id < 0 && prop.Value.ValueKind == JsonValueKind.Number &&
-                        Array.Exists(IdKeys, k => string.Equals(k, prop.Name, StringComparison.OrdinalIgnoreCase)) &&
-                        prop.Value.TryGetInt64(out var n) && n >= 1_000_000)
-                        id = n;
-                    else if (title is null && prop.Value.ValueKind == JsonValueKind.String &&
-                             Array.Exists(NameKeys, k => string.Equals(k, prop.Name, StringComparison.OrdinalIgnoreCase)))
-                        title = prop.Value.GetString();
-                }
-                if (id >= 0 && !string.IsNullOrWhiteSpace(title))
-                    TitleDiscovered?.Invoke(id, title.Trim());
-                foreach (var prop in el.EnumerateObject())
-                    ScanForTitles(prop.Value, depth + 1);
-                break;
-            case JsonValueKind.Array:
-                foreach (var item in el.EnumerateArray())
-                    ScanForTitles(item, depth + 1);
-                break;
         }
     }
 

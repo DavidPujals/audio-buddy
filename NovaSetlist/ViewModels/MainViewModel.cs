@@ -80,7 +80,6 @@ public partial class MainViewModel : ObservableObject
         Spl = new SplViewModel(_config);
         Playback = new PlaybackViewModel(_config);
         Playback.Updated += FollowPlayback;
-        Playback.SongsFileChanged += () => _ = PublishPlaybackIfNewAsync();
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _saveTimer.Tick += (_, _) =>
         {
@@ -261,94 +260,6 @@ public partial class MainViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>
-    /// Names every Playback song in one go by assuming Playback's loaded setlist is in the
-    /// same order as this one: walks Playback's setlist, then links song N to row N.
-    /// </summary>
-    public async Task MatchPlaybackByOrderAsync()
-    {
-        if (Items.Count == 0)
-        {
-            StatusText = "Add the songs to this setlist first — the match links Playback's songs to these rows in order";
-            return;
-        }
-        List<long> ids;
-        try
-        {
-            var progress = new Progress<string>(s => StatusText = "Matching with Playback — " + s);
-            ids = await Playback.WalkSetlistAsync(progress, CancellationToken.None);
-        }
-        catch (InvalidOperationException ex)
-        {
-            StatusText = ex.Message;
-            return;
-        }
-
-        var n = Math.Min(ids.Count, Items.Count);
-        for (var i = 0; i < n; i++)
-            Playback.Learn(ids[i], Items[i].Name.Trim(), announce: false);
-        Playback.Learn(-1, "", announce: true); // refresh the panel text
-
-        StatusText = ids.Count == Items.Count
-            ? $"Matched {n} Playback songs to this setlist by order"
-            : $"Playback has {ids.Count} songs, this setlist has {Items.Count} — matched the first {n} by order; right-click a row → Link to fix any";
-    }
-
-    // ---------- Playback names → the sheet ----------
-
-    private static string PublishedStampPath => System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NovaSetlist", "playback-published.txt");
-    private bool _publishing;
-
-    /// <summary>
-    /// Publishes this PC's Playback songs file (playback-songs.json — generated through the
-    /// MultiTracks connector) to the sheet's Playback tab, which every machine reads on sync.
-    /// Skipped when the file hasn't changed since it was last published, unless forced.
-    /// </summary>
-    public async Task PublishPlaybackIfNewAsync(bool force = false)
-    {
-        if (_publishing)
-            return;
-        var stamp = Playback.SongsFileStamp;
-        if (stamp.Length == 0)
-        {
-            if (force) StatusText = "No Playback songs file on this PC to publish — it's generated here through the MultiTracks connector";
-            return;
-        }
-        string published = "";
-        try { if (System.IO.File.Exists(PublishedStampPath)) published = System.IO.File.ReadAllText(PublishedStampPath).Trim(); } catch { }
-        if (!force && published == stamp)
-            return;
-        if (!GoogleAuth.IsSignedIn)
-        {
-            if (force) StatusText = "Sign in with Google (Settings → Database) to publish Playback names to the sheet";
-            return;
-        }
-        var rows = Playback.SongsFileRows();
-        if (rows.Count == 0)
-        {
-            if (force) StatusText = "The Playback songs file on this PC is empty — nothing to publish";
-            return;
-        }
-
-        _publishing = true;
-        try
-        {
-            StatusText = $"Publishing {rows.Count} Playback songs to the sheet…";
-            await _sheets.PublishPlaybackAsync(_config, rows);
-            try { System.IO.File.WriteAllText(PublishedStampPath, stamp); } catch { }
-            StatusText = $"Playback songs published to the sheet — {rows.Count} songs";
-        }
-        catch (Exception ex)
-        {
-            StatusText = "Couldn't publish Playback names to the sheet — " + Brief(ex);
-        }
-        finally
-        {
-            _publishing = false;
-        }
-    }
-
     // ---------- now playing follows Playback ----------
 
     private long _followedSongId = -1;
@@ -380,8 +291,8 @@ public partial class MainViewModel : ObservableObject
         if (id != _followedSongId || !Timecode.IsExternal)
         {
             _followedSongId = id;
-            var reference = Playback.ReferenceFor(id);
-            var title = Playback.TitleFor(id) ?? $"Song {id}";
+            var reference = Playback.SongFor(id);
+            var title = reference?.Title ?? $"Song {id} — not in the Playback tab";
             var row = FindRowByName(title);
             var master = row is null
                 ? _allSongs.FirstOrDefault(s => string.Equals(s.Name.Trim(), title, StringComparison.OrdinalIgnoreCase))
@@ -415,22 +326,6 @@ public partial class MainViewModel : ObservableObject
             ?? matches.FirstOrDefault();
     }
 
-    /// <summary>Remembers that the song Playback is currently on is this row's song.</summary>
-    public void LinkToPlayback(SetItemViewModel item)
-    {
-        var id = Playback.CurrentSongId;
-        if (id < 0)
-        {
-            StatusText = Playback.IsEnabled
-                ? "Playback isn't reporting a song right now — select the song in Playback, then try again"
-                : "Set the Playback host in Settings first";
-            return;
-        }
-        Playback.Learn(id, item.Name.Trim());
-        StatusText = $"Linked '{item.Name.Trim()}' to Playback song {id}";
-        _followedSongId = -1; // re-cue Now Playing under the new name on the next poll
-    }
-
     /// <summary>Adds a leader name to the dropdown if it's new (case-insensitive).</summary>
     private void AddLeader(string? name)
     {
@@ -461,8 +356,6 @@ public partial class MainViewModel : ObservableObject
             // Edits parked while signed out / offline can go up now.
             if (_pendingSheetWrites.Count > 0 && GoogleAuth.IsSignedIn)
                 RearmSheetWrite(SheetWriteDebounce);
-            // A Playback names file generated on this PC that the sheet hasn't got yet goes up too.
-            _ = PublishPlaybackIfNewAsync();
         }
         catch (Exception ex)
         {

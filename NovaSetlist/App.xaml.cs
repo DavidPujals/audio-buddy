@@ -13,12 +13,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Services.UpdateService.CleanupLeftovers();
-        // Older versions (≤1.9.x) could store a MultiTracks sign-in token; the app no longer
-        // signs in to MultiTracks at all, so a leftover token has no reason to stay on disk.
+        // Older versions kept per-machine Playback files (a MultiTracks sign-in token, a names
+        // map, a local songs file, a publish stamp). The sheet's Playback tab is the only
+        // source now, so leftovers have no reason to stay on disk.
         try
         {
             var dir = Path.GetDirectoryName(CrashLog)!;
-            foreach (var leftover in new[] { "multitracks-token.bin", "multitracks-setlists.json" })
+            foreach (var leftover in new[] { "multitracks-token.bin", "multitracks-setlists.json",
+                                             "playback-songs.json", "playback-published.txt", "playback-map.json",
+                                             "playback-last-setlist.json" })
                 File.Delete(Path.Combine(dir, leftover));
         }
         catch

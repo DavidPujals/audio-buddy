@@ -287,35 +287,6 @@ public partial class MainWindow : Window
             _vm.RemoveCommand.Execute(item);
     }
 
-    private void RowMenuLinkPlayback_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: SetItemViewModel item })
-            _vm.LinkToPlayback(item);
-    }
-
-    private async void PublishPlayback_Click(object sender, RoutedEventArgs e)
-    {
-        await _vm.PublishPlaybackIfNewAsync(force: true);
-    }
-
-    private bool _matching;
-
-    private async void MatchPlayback_Click(object sender, RoutedEventArgs e)
-    {
-        if (_matching)
-            return;
-        var answer = MessageBox.Show(this,
-            "This steps Playback through its setlist (Previous to the start, Next to the end, then back to where it was) " +
-            "and names each Playback song from the row in the same position here.\n\n" +
-            "Playback must be stopped. It takes about two seconds per song. Continue?",
-            "Match songs by order", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (answer != MessageBoxResult.Yes)
-            return;
-        _matching = true;
-        try { await _vm.MatchPlaybackByOrderAsync(); }
-        finally { _matching = false; }
-    }
-
     // ---------- setlist menu ----------
 
     private static string SetlistFilter =>

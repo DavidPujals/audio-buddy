@@ -77,7 +77,7 @@
                         <TextBox x:Name="PlaybackTabBox" MinHeight="30" />
                     </StackPanel>
                 </Grid>
-                <TextBlock Text="Songs: Song Name · Default Key · Length · BPM · Chromatic · Key Change · Key Change At. Leaders: one name per row. Playback: the shared database of Playback song IDs → names, keys and lengths — written by the app, read by every machine on sync."
+                <TextBlock Text="Songs: Song Name · Default Key · Length · BPM · Chromatic · Key Change · Key Change At. Leaders: one name per row. Playback: the Playback song database — read by every machine on sync, updated by hand."
                            Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,6,0,0" />
             </StackPanel>
 
@@ -175,7 +175,7 @@
                     <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
                                Fill="{StaticResource HairlineBrush}" />
                 </Grid>
-                <TextBlock Text="Playback reports songs as numbers. Their names, keys, BPM and play lengths come from the sheet's Playback tab (Database page), which every machine reads on sync — no MultiTracks sign-in involved. Songs the tab doesn't know can be linked by hand: right-click a setlist row → Link to the song playing in Playback."
+                <TextBlock Text="Playback reports songs as numbers. The sheet's Playback tab (Database page) is the database that turns a number into a song, key, BPM and play length; every machine reads it on sync and nothing in the app writes it. A song that shows as just a number isn't in the tab yet — ask Claude to update the database."
                            Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,0" />
             </StackPanel>
         </Grid>

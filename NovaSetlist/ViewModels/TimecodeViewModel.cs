@@ -531,7 +531,10 @@ public partial class TimecodeViewModel : ObservableObject, IDisposable
                 CountdownText = SongLength.Format(remaining);
                 CountdownState = external && !_externalPlaying ? "ok"
                                : remaining <= 10 ? "crit" : remaining <= 30 ? "warn" : "ok";
-                CountdownSub = $"of {SongLength.Format(_lengthSeconds)}{source}";
+                // Driven by Playback the line carries the playhead too — it is the Playback readout now.
+                CountdownSub = external
+                    ? $"{SongLength.Format(elapsed)} of {SongLength.Format(_lengthSeconds)}{source}"
+                    : $"of {SongLength.Format(_lengthSeconds)}{source}";
             }
             else
             {
