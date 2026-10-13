@@ -105,12 +105,8 @@ public partial class SettingsDialog : Window
         _originalOffset = vm.Spl.Offset;
         SplOffsetBox.Text = vm.Spl.Offset.ToString("0.#", CultureInfo.CurrentCulture);
         PlaybackHostBox.Text = vm.Playback.Host;
-        MultiTracksClientIdBox.Text = vm.Config.MultiTracksClientId;
-        MultiTracksSecretBox.Password = vm.Config.MultiTracksClientSecret;
-        MultiTracksRedirectBox.Text = vm.Config.MultiTracksRedirectUri;
 
         UpdateGoogleUi();
-        UpdateMultiTracksUi();
 
         // Reopen on the page that was open last time (this run) — settings are usually
         // revisited to tweak the same thing.
@@ -136,77 +132,6 @@ public partial class SettingsDialog : Window
         PageAudio.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         PageSpl.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
         PagePlayback.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    public string MultiTracksClientId => MultiTracksClientIdBox.Text.Trim();
-
-    private void UpdateMultiTracksUi()
-    {
-        var mt = _vm.MultiTracks;
-        if (MultiTracksClientId.Length == 0)
-        {
-            MultiTracksStatusText.Text = "No client ID yet — sign-in isn't possible until MultiTracks issues one.";
-            MultiTracksAuthButton.Content = "Sign in to MultiTracks";
-            MultiTracksAuthButton.IsEnabled = false;
-        }
-        else if (mt.IsSignedIn)
-        {
-            MultiTracksStatusText.Text = "Signed in — the PLAYBACK panel's Refresh names button pulls titles from your setlists.";
-            MultiTracksAuthButton.Content = "Sign out";
-            MultiTracksAuthButton.IsEnabled = true;
-        }
-        else
-        {
-            MultiTracksStatusText.Text = "Sign in with the church's MultiTracks account to name Playback's songs.";
-            MultiTracksAuthButton.Content = "Sign in to MultiTracks";
-            MultiTracksAuthButton.IsEnabled = true;
-        }
-    }
-
-    private void MultiTracksClientId_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        // The service reads the ID from config at sign-in time, so apply it as typed.
-        _vm.Config.MultiTracksClientId = MultiTracksClientId;
-        UpdateMultiTracksUi();
-    }
-
-    private void MultiTracksSecret_PasswordChanged(object sender, RoutedEventArgs e) =>
-        _vm.Config.MultiTracksClientSecret = MultiTracksSecretBox.Password.Trim();
-
-    private void MultiTracksRedirect_TextChanged(object sender, TextChangedEventArgs e) =>
-        _vm.Config.MultiTracksRedirectUri = MultiTracksRedirectBox.Text.Trim();
-
-    private async void MultiTracksAuth_Click(object sender, RoutedEventArgs e)
-    {
-        var mt = _vm.MultiTracks;
-        if (mt.IsSignedIn)
-        {
-            mt.SignOut();
-            UpdateMultiTracksUi();
-            return;
-        }
-        _vm.Config.MultiTracksClientId = MultiTracksClientId;
-        _vm.Config.Save();
-        MultiTracksAuthButton.IsEnabled = false;
-        MultiTracksStatusText.Text = "Waiting for the browser — sign in to MultiTracks there…";
-        try
-        {
-            await mt.SignInAsync(_closing.Token);
-            _ = _vm.RefreshPlaybackNamesAsync();
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        catch (Exception ex)
-        {
-            if (IsLoaded)
-                MessageBox.Show(this, ex.Message, "MultiTracks sign-in", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        finally
-        {
-            UpdateMultiTracksUi();
-        }
     }
 
     private void UpdateGoogleUi()

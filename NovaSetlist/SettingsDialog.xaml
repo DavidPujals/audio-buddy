@@ -171,44 +171,12 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="MULTITRACKS ACCOUNT" Style="{StaticResource SectionHeader}" />
+                    <TextBlock Grid.Column="0" Text="SONG NAMES" Style="{StaticResource SectionHeader}" />
                     <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
                                Fill="{StaticResource HairlineBrush}" />
                 </Grid>
-                <TextBlock Text="Names Playback's songs, reads their keys and lengths, and sets SMPTE timecode on setlist songs — all through your MultiTracks setlists (Live Bundle / MultiTracks One). Needs an OAuth client ID issued by MultiTracks for this app — ask support@multitracks.com."
-                           Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,8" />
-                <TextBlock Text="CLIENT ID" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
-                <TextBox x:Name="MultiTracksClientIdBox" MinHeight="30" FontFamily="Consolas" TextChanged="MultiTracksClientId_TextChanged" />
-                <Grid Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="CLIENT SECRET (IF ISSUED)" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
-                        <PasswordBox x:Name="MultiTracksSecretBox" MinHeight="30" FontFamily="Consolas"
-                                     Background="{StaticResource FieldBrush}" Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource HairlineBrush}" Padding="8,5" CaretBrush="{StaticResource TextBrush}"
-                                     PasswordChanged="MultiTracksSecret_PasswordChanged" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2">
-                        <TextBlock Text="REDIRECT URI (IF REGISTERED)" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
-                        <TextBox x:Name="MultiTracksRedirectBox" MinHeight="30" FontFamily="Consolas" TextChanged="MultiTracksRedirect_TextChanged" />
-                    </StackPanel>
-                </Grid>
-                <TextBlock Text="Leave the redirect blank for a loopback redirect on a free port (http://127.0.0.1:port/). If MultiTracks registered a fixed one for the client, paste it here exactly."
-                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
-                <Grid Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="MultiTracksStatusText" Grid.Column="0" VerticalAlignment="Center"
-                               Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="1,0,10,0" />
-                    <Button x:Name="MultiTracksAuthButton" Grid.Column="1" MinWidth="140" Padding="10,5"
-                            VerticalAlignment="Center" Click="MultiTracksAuth_Click" />
-                </Grid>
+                <TextBlock Text="Playback reports songs as numbers. Their names, keys, BPM and play lengths come from the sheet's Playback tab (Database page), which every machine reads on sync — no MultiTracks sign-in involved. Songs the tab doesn't know can be linked by hand: right-click a setlist row → Link to the song playing in Playback."
+                           Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,0" />
             </StackPanel>
         </Grid>
 

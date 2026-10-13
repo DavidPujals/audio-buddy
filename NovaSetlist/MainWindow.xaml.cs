@@ -293,28 +293,9 @@ public partial class MainWindow : Window
             _vm.LinkToPlayback(item);
     }
 
-    private async void RefreshPlaybackNames_Click(object sender, RoutedEventArgs e)
-    {
-        await _vm.RefreshPlaybackNamesAsync();
-    }
-
     private async void PublishPlayback_Click(object sender, RoutedEventArgs e)
     {
         await _vm.PublishPlaybackIfNewAsync(force: true);
-    }
-
-    private PlaybackTimecodeDialog? _timecodeDialog;
-
-    private void PlaybackTimecode_Click(object sender, RoutedEventArgs e)
-    {
-        if (_timecodeDialog is { IsVisible: true })
-        {
-            _timecodeDialog.Activate();
-            return;
-        }
-        _timecodeDialog = new PlaybackTimecodeDialog(_vm) { Owner = this };
-        _timecodeDialog.Closed += (_, _) => _timecodeDialog = null;
-        _timecodeDialog.Show();
     }
 
     private bool _matching;
@@ -429,7 +410,6 @@ public partial class MainWindow : Window
         _vm.Spl.SelectedDevice = dialog.SplDevice;
         _vm.Spl.IsEnabled = dialog.SplEnabled;
         _vm.Playback.Apply(dialog.PlaybackHost);
-        _vm.Config.MultiTracksClientId = dialog.MultiTracksClientId;
         await _vm.ApplySheetSettingsAsync(dialog.SpreadsheetId, dialog.SongsTabName, dialog.LeadersTabName, dialog.PlaybackTabName);
     }
 

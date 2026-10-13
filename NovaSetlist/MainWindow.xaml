@@ -1046,7 +1046,7 @@
                     </Grid>
 
                     <!-- Two readouts side by side once Playback reports a key: the detected key
-                         (left) and the key MultiTracks has the song in (right). -->
+                         (left) and the key the Playback song data gives (right). -->
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -1210,39 +1210,9 @@
                     <TextBlock Text="{Binding SubText}" HorizontalAlignment="Center"
                                Foreground="{StaticResource FaintBrush}" FontSize="11"
                                TextWrapping="Wrap" TextAlignment="Center" MaxWidth="270" />
-                    <Button Content="Publish names to sheet" HorizontalAlignment="Center" Margin="0,6,0,0"
+                    <Button Content="Publish songs to sheet" HorizontalAlignment="Center" Margin="0,6,0,0"
                             Padding="10,3" FontSize="11" Click="PublishPlayback_Click"
-                            ToolTip="Writes this PC's Playback names file (generated through the MultiTracks connector) to the sheet's Playback tab, where every machine reads it on sync">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    <Button Content="Refresh names from MultiTracks" HorizontalAlignment="Center" Margin="0,4,0,0"
-                            Padding="10,3" FontSize="11" Click="RefreshPlaybackNames_Click"
-                            ToolTip="Pulls every recent setlist from the MultiTracks account and names Playback's songs from it (needs the MultiTracks sign-in)">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.MultiTracks.IsConfigured, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding DataContext.IsShort, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    <Button Content="Timecode in Playback…" HorizontalAlignment="Center" Margin="0,4,0,0"
-                            Padding="10,3" FontSize="11" Click="PlaybackTimecode_Click"
-                            ToolTip="Set the SMPTE timecode start on songs in a MultiTracks setlist (0:00, or follow the default arrangement)">
+                            ToolTip="Writes this PC's Playback songs file (generated through the MultiTracks connector) to the sheet's Playback tab, where every machine reads it on sync">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                                 <Style.Triggers>

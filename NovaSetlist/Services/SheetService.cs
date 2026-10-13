@@ -63,8 +63,7 @@ public sealed class SheetService
 
     // ---------- the Playback tab (shared Playback-ID database) ----------
 
-    private static readonly string[] PlaybackHeaders =
-        { "Playback ID", "Song", "Key", "BPM", "Length", "Setlist", "Setlist ID", "Date", "Order" };
+    private static readonly string[] PlaybackHeaders = { "Playback ID", "Song", "Key", "BPM", "Length" };
 
     /// <summary>The Playback tab's rows; empty when the tab doesn't exist yet (that isn't an
     /// error — the tab appears the first time a machine publishes).</summary>
@@ -89,10 +88,6 @@ public sealed class SheetService
                 Key = Music.Keys.Normalize(Cell(r, 2)),
                 Bpm = Cell(r, 3),
                 Length = Cell(r, 4),
-                Setlist = Cell(r, 5),
-                SetlistId = ParseLong(Cell(r, 6)),
-                Date = Cell(r, 7),
-                Order = (int)ParseLong(Cell(r, 8)),
             })
             .Where(p => p.SetlistSongId > 0 && p.Title.Length > 0)
             .ToList();
@@ -118,9 +113,8 @@ public sealed class SheetService
             await ThrowIfFailedAsync(cleared);
 
         var values = new List<object[]> { PlaybackHeaders.Cast<object>().ToArray() };
-        values.AddRange(rows.Select(p => new object[]
-            { p.SetlistSongId, p.Title, p.Key, p.Bpm, p.Length, p.Setlist, p.SetlistId, p.Date, p.Order }));
-        var url = ValuesUrlFor(config, tab, $"A1:I{values.Count}") + "?valueInputOption=RAW";
+        values.AddRange(rows.Select(p => new object[] { p.SetlistSongId, p.Title, p.Key, p.Bpm, p.Length }));
+        var url = ValuesUrlFor(config, tab, $"A1:E{values.Count}") + "?valueInputOption=RAW";
         var body = JsonSerializer.Serialize(new { values });
         using var response = await SendAuthedAsync(() => new HttpRequestMessage(HttpMethod.Put, url)
         {
