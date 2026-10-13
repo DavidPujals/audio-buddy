@@ -104,6 +104,8 @@ public partial class SettingsDialog : Window
         SplOffsetBox.Text = vm.Spl.Offset.ToString("0.#", CultureInfo.CurrentCulture);
         PlaybackHostBox.Text = vm.Playback.Host;
         MultiTracksClientIdBox.Text = vm.Config.MultiTracksClientId;
+        MultiTracksSecretBox.Password = vm.Config.MultiTracksClientSecret;
+        MultiTracksRedirectBox.Text = vm.Config.MultiTracksRedirectUri;
 
         UpdateGoogleUi();
         UpdateMultiTracksUi();
@@ -165,6 +167,12 @@ public partial class SettingsDialog : Window
         _vm.Config.MultiTracksClientId = MultiTracksClientId;
         UpdateMultiTracksUi();
     }
+
+    private void MultiTracksSecret_PasswordChanged(object sender, RoutedEventArgs e) =>
+        _vm.Config.MultiTracksClientSecret = MultiTracksSecretBox.Password.Trim();
+
+    private void MultiTracksRedirect_TextChanged(object sender, TextChangedEventArgs e) =>
+        _vm.Config.MultiTracksRedirectUri = MultiTracksRedirectBox.Text.Trim();
 
     private async void MultiTracksAuth_Click(object sender, RoutedEventArgs e)
     {

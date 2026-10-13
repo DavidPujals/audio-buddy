@@ -173,6 +173,26 @@
                            Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,8" />
                 <TextBlock Text="CLIENT ID" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
                 <TextBox x:Name="MultiTracksClientIdBox" MinHeight="30" FontFamily="Consolas" TextChanged="MultiTracksClientId_TextChanged" />
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="CLIENT SECRET (IF ISSUED)" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
+                        <PasswordBox x:Name="MultiTracksSecretBox" MinHeight="30" FontFamily="Consolas"
+                                     Background="{StaticResource FieldBrush}" Foreground="{StaticResource TextBrush}"
+                                     BorderBrush="{StaticResource HairlineBrush}" Padding="8,5" CaretBrush="{StaticResource TextBrush}"
+                                     PasswordChanged="MultiTracksSecret_PasswordChanged" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="REDIRECT URI (IF REGISTERED)" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
+                        <TextBox x:Name="MultiTracksRedirectBox" MinHeight="30" FontFamily="Consolas" TextChanged="MultiTracksRedirect_TextChanged" />
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="Leave the redirect blank for a loopback redirect on a free port (http://127.0.0.1:port/). If MultiTracks registered a fixed one for the client, paste it here exactly."
+                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
                 <Grid Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />

@@ -80,12 +80,29 @@ public sealed class MultiTracksService
         var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
         var state = Base64Url(RandomNumberGenerator.GetBytes(16));
 
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
+        // MultiTracks may register a fixed redirect URI for the client; otherwise use a
+        // loopback redirect on whatever port is free (RFC 8252 §7.3).
+        var fixedRedirect = _config.MultiTracksRedirectUri.Trim();
+        var listenPort = 0;
+        if (fixedRedirect.Length > 0)
+        {
+            if (!Uri.TryCreate(fixedRedirect, UriKind.Absolute, out var ru) || ru.Scheme != "http" || !ru.IsLoopback)
+                throw new InvalidOperationException("The MultiTracks redirect URI must be an http://127.0.0.1 or http://localhost address (Settings → Playback).");
+            listenPort = ru.Port;
+        }
+        var listener = new TcpListener(IPAddress.Loopback, listenPort);
+        try
+        {
+            listener.Start();
+        }
+        catch (SocketException)
+        {
+            throw new InvalidOperationException($"Port {listenPort} for the MultiTracks redirect URI is in use on this PC — close whatever holds it or ask MultiTracks to register another port.");
+        }
         try
         {
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            var redirect = $"http://127.0.0.1:{port}/";
+            var redirect = fixedRedirect.Length > 0 ? fixedRedirect : $"http://127.0.0.1:{port}/";
             var url = authorizeEndpoint + (authorizeEndpoint.Contains('?') ? "&" : "?") + string.Join("&",
                 "client_id=" + Uri.EscapeDataString(ClientId),
                 "redirect_uri=" + Uri.EscapeDataString(redirect),

@@ -26,6 +26,10 @@ public sealed class AppConfig
     /// <summary>Client secret if MultiTracks issued one (public clients have none).</summary>
     public string MultiTracksClientSecret { get; set; } = "";
 
+    /// <summary>Redirect URI exactly as MultiTracks registered it for this client, e.g.
+    /// http://127.0.0.1:48123/callback; "" = a loopback redirect on a random port.</summary>
+    public string MultiTracksRedirectUri { get; set; } = "";
+
     /// <summary>OAuth authority; "" = https://account.multitracks.com/ (override only for testing).</summary>
     public string MultiTracksAuthority { get; set; } = "";
 
@@ -79,6 +83,7 @@ public sealed class AppConfig
                     cfg.PlaybackHost = cfg.PlaybackHost?.Trim() ?? "";
                     cfg.MultiTracksClientId = cfg.MultiTracksClientId?.Trim() ?? "";
                     cfg.MultiTracksClientSecret = cfg.MultiTracksClientSecret?.Trim() ?? "";
+                    cfg.MultiTracksRedirectUri = cfg.MultiTracksRedirectUri?.Trim() ?? "";
                     cfg.MultiTracksAuthority = cfg.MultiTracksAuthority?.Trim() ?? "";
                     cfg.MultiTracksMcpUrl = cfg.MultiTracksMcpUrl?.Trim() ?? "";
                     return cfg;
