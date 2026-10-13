@@ -13,7 +13,6 @@ public partial class SettingsDialog : Window
     public string SpreadsheetId => IdBox.Text;
     public string SongsTabName => SongsTabBox.Text;
     public string LeadersTabName => LeadersTabBox.Text;
-    public string PlaybackTabName => PlaybackTabBox.Text;
     public string TimecodeDevice => TimecodeDeviceBox.SelectedItem as string ?? TimecodeViewModel.OffDevice;
     public string KeyDetectDevice => KeyDeviceBox.SelectedItem as string ?? KeyDetectViewModel.OffDevice;
 
@@ -22,58 +21,6 @@ public partial class SettingsDialog : Window
     public bool SplFast => SplResponseBox.SelectedIndex == 1;
     public double SplYellowLevel => ParseLevel(SplYellowBox.Text, _vm.Spl.YellowFrom);
     public double SplRedLevel => ParseLevel(SplRedBox.Text, _vm.Spl.RedFrom);
-    /// <summary>The host to connect to: a scan result ("Name  (10.1.2.3)") collapses to its address.</summary>
-    public string PlaybackHost
-    {
-        get
-        {
-            var text = PlaybackHostBox.Text.Trim();
-            var found = _found.FirstOrDefault(f => f.Label == text);
-            return found?.Address ?? text;
-        }
-    }
-
-    private List<Services.PlaybackDiscovery.Found> _found = new();
-    private System.Threading.CancellationTokenSource? _scan;
-
-    private async void FindPlayback_Click(object sender, RoutedEventArgs e)
-    {
-        _scan?.Cancel();
-        _scan = new System.Threading.CancellationTokenSource();
-        var token = _scan.Token;
-        FindPlaybackButton.IsEnabled = false;
-        var progress = new Progress<string>(s => PlaybackFindText.Text = "Scanning — " + s);
-        try
-        {
-            _found = await Services.PlaybackDiscovery.ScanAsync(progress, token);
-            PlaybackHostBox.ItemsSource = _found.Select(f => f.Label).ToList();
-            if (_found.Count == 0)
-            {
-                PlaybackFindText.Text = "No Playback found on this PC's networks. Is Playback open with Allow Remote Connections on, and on the same network?";
-            }
-            else
-            {
-                PlaybackHostBox.Text = _found[0].Label;
-                PlaybackFindText.Text = _found.Count == 1
-                    ? $"Found Playback at {_found[0].Label} — Save & sync to connect."
-                    : $"Found {_found.Count} — pick one, then Save & sync to connect.";
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // superseded by a newer scan or the window closed
-        }
-        catch (Exception ex)
-        {
-            PlaybackFindText.Text = "Scan failed — " + ex.Message;
-        }
-        finally
-        {
-            if (!token.IsCancellationRequested)
-                FindPlaybackButton.IsEnabled = true;
-        }
-    }
-
     public SettingsDialog(MainViewModel vm)
     {
         InitializeComponent();
@@ -83,7 +30,6 @@ public partial class SettingsDialog : Window
         IdBox.Text = vm.Config.SpreadsheetId == "PUT_ID_HERE" ? "" : vm.Config.SpreadsheetId;
         SongsTabBox.Text = vm.Config.SongsTab;
         LeadersTabBox.Text = vm.Config.LeadersTab;
-        PlaybackTabBox.Text = vm.Config.PlaybackTab;
 
         vm.Timecode.RefreshDevices();
         vm.KeyDetect.RefreshDevices();
@@ -104,7 +50,6 @@ public partial class SettingsDialog : Window
         // while this dialog is open; Cancel puts the original value back.
         _originalOffset = vm.Spl.Offset;
         SplOffsetBox.Text = vm.Spl.Offset.ToString("0.#", CultureInfo.CurrentCulture);
-        PlaybackHostBox.Text = vm.Playback.Host;
 
         UpdateGoogleUi();
 
@@ -114,13 +59,8 @@ public partial class SettingsDialog : Window
         Loaded += (_, _) => (NavList.SelectedIndex == 0 ? IdBox : null)?.Focus();
     }
 
-    /// <summary>Sidebar page to open on: 0 Database, 1 Audio inputs, 2 SPL meter, 3 Playback.</summary>
+    /// <summary>Sidebar page to open on: 0 Database, 1 Audio inputs, 2 SPL meter.</summary>
     private static int s_lastPage;
-
-    public static int PlaybackPage => 3;
-
-    /// <summary>Opens the dialog on a given page (e.g. straight to Playback from the side panel).</summary>
-    public void ShowPage(int index) => NavList.SelectedIndex = Math.Clamp(index, 0, NavList.Items.Count - 1);
 
     private void NavList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -131,7 +71,6 @@ public partial class SettingsDialog : Window
         PageDatabase.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
         PageAudio.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         PageSpl.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
-        PagePlayback.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateGoogleUi()
@@ -227,7 +166,6 @@ public partial class SettingsDialog : Window
     protected override void OnClosed(EventArgs e)
     {
         _closing.Cancel();
-        _scan?.Cancel();
         if (DialogResult != true)
             _vm.Spl.Offset = _originalOffset; // cancelled — undo the live calibration trim
         base.OnClosed(e);

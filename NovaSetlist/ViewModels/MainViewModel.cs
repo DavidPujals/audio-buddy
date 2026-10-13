@@ -26,7 +26,6 @@ public partial class MainViewModel : ObservableObject
     public TimecodeViewModel Timecode { get; }
     public KeyDetectViewModel KeyDetect { get; }
     public SplViewModel Spl { get; }
-    public PlaybackViewModel Playback { get; }
 
     public ObservableCollection<SetItemViewModel> Items { get; } = new();
     public ObservableCollection<Song> SearchResults { get; } = new();
@@ -78,8 +77,6 @@ public partial class MainViewModel : ObservableObject
         Timecode = new TimecodeViewModel(_config);
         KeyDetect = new KeyDetectViewModel(_config);
         Spl = new SplViewModel(_config);
-        Playback = new PlaybackViewModel(_config);
-        Playback.Updated += FollowPlayback;
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _saveTimer.Tick += (_, _) =>
         {
@@ -91,12 +88,11 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Applies sheet settings from the Settings dialog: saves appsettings.json and re-syncs.</summary>
-    public async Task ApplySheetSettingsAsync(string spreadsheetId, string songsTab, string leadersTab, string playbackTab)
+    public async Task ApplySheetSettingsAsync(string spreadsheetId, string songsTab, string leadersTab)
     {
         _config.SpreadsheetId = SheetUrl.ExtractSpreadsheetId(spreadsheetId);
         _config.SongsTab = string.IsNullOrWhiteSpace(songsTab) ? "Songs" : songsTab.Trim();
         _config.LeadersTab = string.IsNullOrWhiteSpace(leadersTab) ? "Leaders" : leadersTab.Trim();
-        _config.PlaybackTab = string.IsNullOrWhiteSpace(playbackTab) ? "Playback" : playbackTab.Trim();
 
         if (!_config.Save())
         {
@@ -121,8 +117,6 @@ public partial class MainViewModel : ObservableObject
         if (cache is not null)
         {
             ApplyMasterData(cache.Songs, cache.Leaders, Environment.TickCount64);
-            if (cache.Playback.Count > 0)
-                Playback.ApplySheetRows(cache.Playback);
             _lastSynced = cache.LastSynced;
             StatusText = $"Using cached list — last synced {cache.LastSynced:g}";
             StatusState = "cached";
@@ -260,72 +254,6 @@ public partial class MainViewModel : ObservableObject
         return true;
     }
 
-    // ---------- now playing follows Playback ----------
-
-    private long _followedSongId = -1;
-
-    /// <summary>True while Playback is connected and on a song — Now Playing is its mirror.</summary>
-    public bool PlaybackDrives => _followedSongId >= 0;
-
-    /// <summary>
-    /// Runs after every Playback poll. While Playback is connected and on a song, that song is
-    /// Now Playing: its name from the map, the length from Playback's own duration for the
-    /// setlist entry (else the matching row / sheet length), key details from the matching row,
-    /// and the countdown off Playback's playhead. When Playback goes away the panel clears.
-    /// </summary>
-    private void FollowPlayback()
-    {
-        var id = Playback.CurrentSongId;
-        if (id < 0)
-        {
-            if (_followedSongId >= 0)
-            {
-                _followedSongId = -1;
-                Timecode.ReleaseExternal();
-                foreach (var it in Items)
-                    it.IsPlaying = false;
-            }
-            return;
-        }
-
-        if (id != _followedSongId || !Timecode.IsExternal)
-        {
-            _followedSongId = id;
-            var reference = Playback.SongFor(id);
-            var title = reference?.Title ?? $"Song {id} — not in the Playback tab";
-            var row = FindRowByName(title);
-            var master = row is null
-                ? _allSongs.FirstOrDefault(s => string.Equals(s.Name.Trim(), title, StringComparison.OrdinalIgnoreCase))
-                : null;
-
-            var length = reference is { Duration: > 0 } ? reference.Duration
-                       : Music.SongLength.ParseSeconds(row?.Length ?? master?.Length);
-            var bpm = First(row?.Bpm, master?.Bpm, reference is { Bpm: > 0 } ? reference.Bpm.ToString("0.#") : "");
-            var fromKey = First(row?.SelectedKey, master?.DefaultKey, reference?.Key);
-            var chromatic = row?.IsChromatic ?? master?.Chromatic ?? false;
-            var keyChangeKey = row is not null ? (row.KeyChangeActive ? row.KeyChangeKey.Trim() : "") : master?.KeyChangeKey ?? "";
-            var keyChangeAt = row is not null ? (row.KeyChangeActive ? row.KeyChangeAt : "") : master?.KeyChangeAt ?? "";
-
-            foreach (var it in Items)
-                it.IsPlaying = it == row;
-            Timecode.CueExternal(title, length, bpm, chromatic, fromKey, keyChangeKey,
-                keyChangeKey.Length > 0 ? Music.SongLength.ParseSeconds(keyChangeAt) : 0);
-        }
-        Timecode.UpdateExternal(Playback.PositionSeconds, Playback.IsPlaying);
-    }
-
-    private static string First(params string?[] values) =>
-        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? "";
-
-    /// <summary>The row for a song name: the one already playing, else the first not yet completed, else any.</summary>
-    private SetItemViewModel? FindRowByName(string name)
-    {
-        var matches = Items.Where(i => string.Equals(i.Name.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
-        return matches.FirstOrDefault(i => i.IsPlaying)
-            ?? matches.FirstOrDefault(i => !i.IsCompleted)
-            ?? matches.FirstOrDefault();
-    }
-
     /// <summary>Adds a leader name to the dropdown if it's new (case-insensitive).</summary>
     private void AddLeader(string? name)
     {
@@ -345,13 +273,11 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var fetchStarted = Environment.TickCount64;
-            var (songs, leaders, playback) = await _sheets.FetchAsync(_config);
+            var (songs, leaders) = await _sheets.FetchAsync(_config);
             ApplyMasterData(songs, leaders, fetchStarted);
-            Playback.ApplySheetRows(playback);
             _lastSynced = DateTime.Now;
-            _storage.SaveCache(new CacheData { Songs = songs, Leaders = leaders, Playback = playback, LastSynced = _lastSynced.Value });
-            StatusText = $"Synced {_lastSynced:g} — {songs.Count} songs, {leaders.Count} leaders" +
-                         (playback.Count > 0 ? $", {playback.Count} Playback names" : "");
+            _storage.SaveCache(new CacheData { Songs = songs, Leaders = leaders, LastSynced = _lastSynced.Value });
+            StatusText = $"Synced {_lastSynced:g} — {songs.Count} songs, {leaders.Count} leaders";
             StatusState = "ok";
             // Edits parked while signed out / offline can go up now.
             if (_pendingSheetWrites.Count > 0 && GoogleAuth.IsSignedIn)
@@ -550,11 +476,6 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void Play(SetItemViewModel item)
     {
-        if (PlaybackDrives)
-        {
-            StatusText = "Now Playing is following Playback — it shows whatever Playback is on while Playback is connected";
-            return;
-        }
         if (item.IsPlaying)
         {
             if (Timecode.PlayState == "cued")

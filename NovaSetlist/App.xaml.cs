@@ -13,15 +13,14 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Services.UpdateService.CleanupLeftovers();
-        // Older versions kept per-machine Playback files (a MultiTracks sign-in token, a names
-        // map, a local songs file, a publish stamp). The sheet's Playback tab is the only
-        // source now, so leftovers have no reason to stay on disk.
+        // Versions 1.7–1.12 had a MultiTracks Playback integration (since removed) that kept
+        // files per machine; clear any leftovers.
         try
         {
             var dir = Path.GetDirectoryName(CrashLog)!;
             foreach (var leftover in new[] { "multitracks-token.bin", "multitracks-setlists.json",
                                              "playback-songs.json", "playback-published.txt", "playback-map.json",
-                                             "playback-last-setlist.json" })
+                                             "playback-last-setlist.json", "playback-capture.jsonl" })
                 File.Delete(Path.Combine(dir, leftover));
         }
         catch

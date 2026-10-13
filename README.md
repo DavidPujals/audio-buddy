@@ -21,8 +21,6 @@ A small Windows desktop app for building a service (setlist) order. Add songs, p
    | Sarah |
    | Mike |
 
-   A third tab, **`Playback`**, holds the Playback song database if you use MultiTracks Playback (see below). The app only reads it.
-
 2. Give the app access, either way works:
    - **Public sheet**: Share → General access → "Anyone with the link" → Viewer. No sign-in needed.
    - **Private sheet**: keep it restricted and use **Settings → Sign in with Google** in the app. Sign-in is per machine and per Windows user, survives restarts, and reads the sheet through the official Sheets API. It also lets the app *add* songs to the sheet (see manual add below). **Sign out** from the same spot.
@@ -42,7 +40,6 @@ A small Windows desktop app for building a service (setlist) order. Add songs, p
      "SpreadsheetId": "PUT_ID_HERE",
      "SongsTab": "Songs",
      "LeadersTab": "Leaders",
-     "PlaybackTab": "Playback",
      "TimecodeDevice": ""
    }
    ```
@@ -64,7 +61,7 @@ Double-click `Audio Buddy.exe` (with `appsettings.json` next to it). On launch i
 - The window reopens at the size and position you left it (per machine, stored in `%APPDATA%\NovaSetlist\window.json`).
 - **Notes** — the editor has a NOTE box for anything worth remembering about this song in this setlist ("Sarah on harmonies"); it shows under the song name and goes into *Copy as text*. Notes belong to the setlist, not the sheet.
 - **Setlist ▾ menu** — *New setlist…* (names it, and **backs the current one up first** to `%APPDATA%\NovaSetlist\backups`, newest 50 kept), *Rename…*, *Open…* / *Save as…* (`.setlist.json` files — prep a setlist at home, open it on the Sunday PC), and *Copy as text* (`Setlist name` then `1. Song Name — Key G — Leader: Sarah — Note: …`). The name shows above the songs.
-- **Settings** — four pages down the left: **Database** (the Google Sheet and sign-in), **Audio inputs** (timecode and key-detection inputs), **SPL meter**, and **Playback** (the Playback computer). It reopens on the page you were on last.
+- **Settings** — three pages down the left: **Database** (the Google Sheet and sign-in), **Audio inputs** (timecode and key-detection inputs) and **SPL meter**. It reopens on the page you were on last.
 - **Settings → About** — software details, version number, and a **Check for updates** button.
 
 ### Timecode viewer
@@ -74,16 +71,6 @@ The panel on the right decodes **SMPTE LTC** from any WDM audio input and shows 
 ### Live key detection
 
 Give it a second WDM input carrying the band / music feed (Settings → Audio inputs → Key detection) and the panel shows the key being played, updated as the music moves. It listens to a few seconds of harmonic context, so give it a moment after a key change; it shows "listening…" instead of guessing when it isn't confident. A feed with bass in it works best — the bass carries the tonality.
-
-### MultiTracks Playback
-
-In **Settings → Playback** click **Find Playback**: the app sweeps the networks this PC is on (port 8080, then checks that whatever answers really speaks Playback's remote protocol) and lists what it finds — pick one and **Save & sync**. You can also type a name or IP (`host:port` if the port is forwarded). Playback itself needs *Allow Remote Connections* on, which doesn't always survive a Playback relaunch. The channel is the one the Playback Remote iPad app uses, and the app only ever listens on it — it never sends Playback a command.
-
-**The Playback tab is the database.** Playback reports songs as numbers, not names, and its protocol has no way to ask for them. The sheet has a **Playback** tab (name configurable in Settings → Database) with one row per Playback song ID — `Playback ID · Song · Key · BPM · Length` — covering the church's MultiTracks library, each ID once. Every machine reads that tab on every sync and matches the ID the connected Playback reports against it; that is the whole mechanism. The app never writes that tab: it is updated by hand, by Claude through the MultiTracks connector when asked (`tools/playback-db.py merge` adds or refreshes rows by ID and leaves the rest alone). A song that shows as `Song 28727477 — not in the Playback tab` is one the database doesn't have yet.
-
-**NOW PLAYING is the Playback readout.** With a Playback host set, the section header shows the link state on the right — `PLAYBACK connected` in green, `stale` amber when the heartbeat stops (5 s), `error` red when the PC can't be reached, dim while connecting (hover for the detail). While Playback is on a song, the section mirrors it: the song's name, BPM and key line from the Playback tab, the countdown against the song's play length (Playback's own figure for that song, trims included; the setlist row's or the sheet's Length when the tab has none), and the sub line `1:23 of 3:45 · Playback` (or `· Playback stopped`). Key details — Chromatic, key change and its flash — come from the matching setlist row by name, which also lights up as playing. The ▶ buttons are parked while Playback drives; they come back the moment Playback disconnects or has no song. The **KEY** section gains a second readout, **Playback**, showing the key the Playback tab has the song in, next to the live-detected key.
-
-Every frame Playback sends is logged to `%APPDATA%\NovaSetlist\playback-capture.jsonl` (rolling, ~3 MB) — the protocol is unofficial, and that file is the evidence when something looks wrong after a Playback update.
 
 ### SPL meter
 

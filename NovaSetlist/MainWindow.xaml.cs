@@ -380,8 +380,7 @@ public partial class MainWindow : Window
         _vm.Spl.RedFrom = dialog.SplRedLevel;
         _vm.Spl.SelectedDevice = dialog.SplDevice;
         _vm.Spl.IsEnabled = dialog.SplEnabled;
-        _vm.Playback.Apply(dialog.PlaybackHost);
-        await _vm.ApplySheetSettingsAsync(dialog.SpreadsheetId, dialog.SongsTabName, dialog.LeadersTabName, dialog.PlaybackTabName);
+        await _vm.ApplySheetSettingsAsync(dialog.SpreadsheetId, dialog.SongsTabName, dialog.LeadersTabName);
     }
 
     protected override void OnClosed(EventArgs e)
@@ -389,7 +388,6 @@ public partial class MainWindow : Window
         SaveWindowPlacement();
         _vm.FlushPendingSave();
         _vm.Spl.FlushConfig();
-        _vm.Playback.Dispose();
         _vm.Timecode.Dispose();
         _vm.KeyDetect.Dispose();
         _vm.Spl.Dispose();

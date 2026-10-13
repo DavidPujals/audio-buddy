@@ -32,7 +32,6 @@
                 <ListBoxItem Content="Database" />
                 <ListBoxItem Content="Audio inputs" />
                 <ListBoxItem Content="SPL meter" />
-                <ListBoxItem Content="Playback" />
             </ListBox>
         </Border>
 
@@ -61,8 +60,6 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="12" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="SONGS TAB" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
@@ -72,12 +69,8 @@
                         <TextBlock Text="LEADERS TAB" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
                         <TextBox x:Name="LeadersTabBox" MinHeight="30" />
                     </StackPanel>
-                    <StackPanel Grid.Column="4">
-                        <TextBlock Text="PLAYBACK TAB" Style="{StaticResource SectionHeader}" Margin="1,0,0,6" />
-                        <TextBox x:Name="PlaybackTabBox" MinHeight="30" />
-                    </StackPanel>
                 </Grid>
-                <TextBlock Text="Songs: Song Name · Default Key · Length · BPM · Chromatic · Key Change · Key Change At. Leaders: one name per row. Playback: the Playback song database — read by every machine on sync, updated by hand."
+                <TextBlock Text="Songs: Song Name · Default Key · Length · BPM · Chromatic · Key Change · Key Change At. Leaders: one name per row."
                            Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,6,0,0" />
             </StackPanel>
 
@@ -147,37 +140,6 @@
                            Foreground="{StaticResource FaintBrush}" FontSize="11" Margin="2,4,0,0" />
             </StackPanel>
 
-            <!-- ============================ Playback ============================ -->
-            <StackPanel x:Name="PagePlayback" Visibility="Collapsed">
-                <TextBlock Text="MULTITRACKS PLAYBACK" Style="{StaticResource SectionHeader}" Margin="1,4,0,6" />
-                <TextBlock Text="Connects to the computer running Playback (its Remote channel) so Now Playing follows whatever Playback is on — song, playhead and length."
-                           Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,0,0,8" />
-                <TextBlock Text="PLAYBACK COMPUTER" Style="{StaticResource SectionHeader}" FontSize="10" Margin="1,0,0,5" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ComboBox x:Name="PlaybackHostBox" Grid.Column="0" IsEditable="True" FontFamily="Consolas" MinHeight="30" />
-                    <Button x:Name="FindPlaybackButton" Grid.Column="1" Content="Find Playback" MinWidth="110" Margin="8,0,0,0"
-                            Click="FindPlayback_Click" ToolTip="Scans this PC's networks for a Playback with Allow Remote Connections on" />
-                </Grid>
-                <TextBlock x:Name="PlaybackFindText"
-                           Text="Click Find Playback to scan the network, or type the Playback computer's name or IP. Playback needs Allow Remote Connections on (port 8080). Leave blank to turn the listener off."
-                           Foreground="{StaticResource FaintBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,4,0,0" />
-
-                <Grid Margin="1,20,0,2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="SONG NAMES" Style="{StaticResource SectionHeader}" />
-                    <Rectangle Grid.Column="1" Height="1" Margin="10,1,0,0" VerticalAlignment="Center"
-                               Fill="{StaticResource HairlineBrush}" />
-                </Grid>
-                <TextBlock Text="Playback reports songs as numbers. The sheet's Playback tab (Database page) is the database that turns a number into a song, key, BPM and play length; every machine reads it on sync and nothing in the app writes it. A song that shows as just a number isn't in the tab yet — ask Claude to update the database."
-                           Foreground="{StaticResource DimBrush}" FontSize="12" TextWrapping="Wrap" Margin="1,6,0,0" />
-            </StackPanel>
         </Grid>
 
         <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,18,0,0">

@@ -23,19 +23,18 @@ public sealed class SheetService
 
     public SheetService(GoogleAuthService auth) => _auth = auth;
 
-    public sealed record SheetData(List<Song> Songs, List<string> Leaders, List<PlaybackRow> Playback);
+    public sealed record SheetData(List<Song> Songs, List<string> Leaders);
 
     public async Task<SheetData> FetchAsync(AppConfig config)
     {
         if (string.IsNullOrWhiteSpace(config.SpreadsheetId) || config.SpreadsheetId == "PUT_ID_HERE")
             throw new InvalidOperationException("No Spreadsheet ID set — open Settings and paste your sheet's ID or URL.");
 
-        // All tabs in flight at once — keeps refresh latency to one round trip. WhenAll observes
-        // every outcome, so one tab failing doesn't leave another's exception dangling.
+        // Both tabs in flight at once — halves refresh latency. WhenAll observes
+        // both outcomes, so one tab failing doesn't leave the other's exception dangling.
         var songsTask = FetchTabAsync(config.SpreadsheetId, config.SongsTab);
         var leadersTask = FetchTabAsync(config.SpreadsheetId, config.LeadersTab);
-        var playbackTask = FetchPlaybackTabAsync(config);
-        await Task.WhenAll(songsTask, leadersTask, playbackTask);
+        await Task.WhenAll(songsTask, leadersTask);
         var songsRows = songsTask.Result;
         var leadersRows = leadersTask.Result;
 
@@ -58,45 +57,8 @@ public sealed class SheetService
             .Where(n => n.Length > 0)
             .ToList();
 
-        return new SheetData(songs, leaders, playbackTask.Result);
+        return new SheetData(songs, leaders);
     }
-
-    // ---------- the Playback tab (shared Playback-ID database) ----------
-
-    private static readonly string[] PlaybackHeaders = { "Playback ID", "Song", "Key", "BPM", "Length" };
-
-    /// <summary>The Playback tab's rows; empty when the tab doesn't exist yet (that isn't an
-    /// error — the tab appears the first time a machine publishes).</summary>
-    private async Task<List<PlaybackRow>> FetchPlaybackTabAsync(AppConfig config)
-    {
-        if (string.IsNullOrWhiteSpace(config.PlaybackTab))
-            return new List<PlaybackRow>();
-        List<string[]> rows;
-        try
-        {
-            rows = await FetchTabAsync(config.SpreadsheetId, config.PlaybackTab);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
-        {
-            return new List<PlaybackRow>(); // no such tab (yet) — the Songs fetch reports real sheet problems
-        }
-        return rows
-            .Select(r => new PlaybackRow
-            {
-                SetlistSongId = ParseLong(Cell(r, 0)),
-                Title = Cell(r, 1),
-                Key = Music.Keys.Normalize(Cell(r, 2)),
-                Bpm = Cell(r, 3),
-                Length = Cell(r, 4),
-            })
-            .Where(p => p.SetlistSongId > 0 && p.Title.Length > 0)
-            .ToList();
-    }
-
-    private static long ParseLong(string cell) =>
-        long.TryParse(cell.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n
-        : double.TryParse(cell.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? (long)d
-        : 0;
 
     /// <summary>Fetches one tab as rows of trimmed cells, header row already skipped.</summary>
     private async Task<List<string[]>> FetchTabAsync(string spreadsheetId, string tab)
